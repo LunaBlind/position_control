@@ -6,18 +6,18 @@ from hippo_msgs.msg import RangeMeasurement, RangeMeasurementArray
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
-
 from tf_transformations import euler_from_quaternion
 
 
 class PositionKalmanFilter(Node):
-
     def __init__(self):
         super().__init__(node_name='position_kalman_filter')
 
-        qos = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                         history=QoSHistoryPolicy.KEEP_LAST,
-                         depth=1)
+        qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
 
         self.init_params()
 
@@ -60,33 +60,39 @@ class PositionKalmanFilter(Node):
         # TODO enter tag poses here
         # TODO in the experiment, the tags will not be in these exact positions
         # however, the relative positions between tags will be the same
-        self.tag_poses = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0],
-                                   [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        self.tag_poses = np.array(
+            [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+        )
 
-        self.position_pub = self.create_publisher(msg_type=PoseStamped,
-                                                  topic='position_estimate',
-                                                  qos_profile=1)
+        self.position_pub = self.create_publisher(
+            msg_type=PoseStamped, topic='position_estimate', qos_profile=1
+        )
 
         self.ranges_sub = self.create_subscription(
             msg_type=RangeMeasurementArray,
             topic='ranges',
             callback=self.on_ranges,
-            qos_profile=qos)
+            qos_profile=qos,
+        )
         self.vision_pose_sub = self.create_subscription(
             msg_type=PoseWithCovarianceStamped,
             topic='vision_pose_cov',
             callback=self.on_vision_pose,
-            qos_profile=qos)
+            qos_profile=qos,
+        )
         # do prediction step with 50 Hz
         self.process_update_timer = self.create_timer(
-            1.0 / 50, self.on_prediction_step_timer)
+            1.0 / 50, self.on_prediction_step_timer
+        )
 
     def init_params(self):
-        self.declare_parameters(namespace='',
-                                parameters=[('range_noise_stddev',
-                                             rclpy.Parameter.Type.DOUBLE),
-                                            ('process_noise_position_stddev',
-                                             rclpy.Parameter.Type.DOUBLE)])
+        self.declare_parameters(
+            namespace='',
+            parameters=[
+                ('range_noise_stddev', rclpy.Parameter.Type.DOUBLE),
+                ('process_noise_position_stddev', rclpy.Parameter.Type.DOUBLE),
+            ],
+        )
         param = self.get_parameter('range_noise_stddev')
         self.get_logger().info(f'{param.name}={param.value}')
         self.range_noise_stddev = param.value
@@ -104,7 +110,8 @@ class PositionKalmanFilter(Node):
             elif param.name == 'process_noise_position_stddev':
                 self.process_noise_position_stddev = param.value
                 self.Q = (self.process_noise_position_stddev**2) * np.eye(
-                    self.num_states)
+                    self.num_states
+                )
             else:
                 continue
         return SetParametersResult(successful=True, reason='Parameter set')
@@ -118,7 +125,7 @@ class PositionKalmanFilter(Node):
             return
 
         measurement: RangeMeasurement
-        for index, measurement in enumerate(ranges_msg.measurements):
+        for i, measurement in enumerate(ranges_msg.measurements):  # noqa: B007
             # TODO
             pass
 
@@ -153,7 +160,7 @@ class PositionKalmanFilter(Node):
         self.publish_pose_msg(state=np.copy(self.state), now=now)
 
     def measurement_update(self):
-        vehicle_position = np.copy(self.state[0:3, 0])
+        vehicle_position = np.copy(self.state[0:3, 0])  # noqa: F841
         # TODO
         pass
 
@@ -165,7 +172,7 @@ class PositionKalmanFilter(Node):
         msg = PoseStamped()
 
         msg.header.stamp = now.to_msg()
-        msg.header.frame_id = "map"
+        msg.header.frame_id = 'map'
         msg.pose.position.x = state[0, 0]
         msg.pose.position.y = state[1, 0]
         msg.pose.position.z = state[2, 0]
