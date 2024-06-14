@@ -7,24 +7,21 @@ from std_msgs.msg import Float32MultiArray
 
 
 class RangesDebugger(Node):
+
     def __init__(self):
         super().__init__(node_name='range_debugger')
 
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1,
-        )
+        qos = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                         history=QoSHistoryPolicy.KEEP_LAST,
+                         depth=1)
 
         self.ranges_debug_pub = self.create_publisher(
-            msg_type=Float32MultiArray, topic='debug', qos_profile=1
-        )
+            msg_type=Float32MultiArray, topic='debug', qos_profile=1)
         self.ranges_sub = self.create_subscription(
             msg_type=RangeMeasurementArray,
             topic='ranges',
             callback=self.on_ranges,
-            qos_profile=qos,
-        )
+            qos_profile=qos)
 
     def on_ranges(self, ranges_msg: RangeMeasurementArray) -> None:
         num_measurements = len(ranges_msg.measurements)
@@ -33,7 +30,7 @@ class RangesDebugger(Node):
         msg.data = [0.0] * 4
 
         if num_measurements:
-            for i, tag in enumerate(ranges_msg.measurements):  # noqa: B007
+            for i, tag in enumerate(ranges_msg.measurements):
                 msg.data[tag.id] = tag.range
 
         self.ranges_debug_pub.publish(msg)

@@ -10,13 +10,12 @@ from tf_transformations import euler_from_quaternion
 
 
 class YawController(Node):
+
     def __init__(self):
         super().__init__(node_name='yaw_controller')
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1,
-        )
+        qos = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                         history=QoSHistoryPolicy.KEEP_LAST,
+                         depth=1)
 
         # default value for the yaw setpoint
         self.setpoint = math.pi / 2.0
@@ -25,18 +24,15 @@ class YawController(Node):
             msg_type=PoseWithCovarianceStamped,
             topic='vision_pose_cov',
             callback=self.on_vision_pose,
-            qos_profile=qos,
-        )
-        self.setpoint_sub = self.create_subscription(
-            Float64Stamped,
-            topic='~/setpoint',
-            callback=self.on_setpoint,
-            qos_profile=qos,
-        )
+            qos_profile=qos)
+        self.setpoint_sub = self.create_subscription(Float64Stamped,
+                                                     topic='~/setpoint',
+                                                     callback=self.on_setpoint,
+                                                     qos_profile=qos)
 
-        self.torque_pub = self.create_publisher(
-            msg_type=ActuatorSetpoint, topic='torque_setpoint', qos_profile=1
-        )
+        self.torque_pub = self.create_publisher(msg_type=ActuatorSetpoint,
+                                                topic='torque_setpoint',
+                                                qos_profile=1)
 
     def wrap_pi(self, value: float):
         """Normalize the angle to the range [-pi; pi]."""
@@ -54,7 +50,7 @@ class YawController(Node):
         q = msg.pose.pose.orientation
         # convert the quaternion to euler angles
         (roll, pitch, yaw) = euler_from_quaternion([q.x, q.y, q.z, q.w])
-        # yaw = self.wrap_pi(yaw)
+        yaw = self.wrap_pi(yaw)
 
         control_output = self.compute_control_output(yaw)
         timestamp = rclpy.time.Time.from_msg(msg.header.stamp)
@@ -67,9 +63,8 @@ class YawController(Node):
         p_gain = 0.1  # turned out to be a good value
         return p_gain * error
 
-    def publish_control_output(
-        self, control_output: float, timestamp: rclpy.time.Time
-    ):
+    def publish_control_output(self, control_output: float,
+                               timestamp: rclpy.time.Time):
         msg = ActuatorSetpoint()
         msg.header.stamp = timestamp.to_msg()
         msg.ignore_x = True
