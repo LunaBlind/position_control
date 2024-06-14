@@ -5,19 +5,26 @@ It takes as input a current depth and a given depth setpoint.
 Its output is a thrust command to the BlueROV's actuators.
 """
 import rclpy
+import numpy as np
 from hippo_msgs.msg import ActuatorSetpoint, DepthStamped, Float64Stamped
+from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
 
 
-class DepthControlNode(Node):
+class PosControlNode(Node):
 
     def __init__(self):
-        super().__init__(node_name='depth_controller')
+        super().__init__(node_name='xy_pos_controller')
 
-        self.current_setpoint = 0.0
-        self.current_depth = 0.0
+        self.current_setpoint = 2.0
+        self.current_2D_pos = 0.0
         self.init_params()
+
+        # self.p_gain = 0.5
+        # self.d_gain = 0.005
+        # self.i_gain = 0.1
+
         self.t_previous = self.get_clock().now()
         self.error_previous = 0.0
         self.error_dt_previous = 0.0
@@ -29,11 +36,11 @@ class DepthControlNode(Node):
                                                 qos_profile=1)
 
         self.setpoint_sub = self.create_subscription(msg_type=Float64Stamped,
-                                                     topic='depth_setpoint',
+                                                     topic='xy_pos_setpoint',
                                                      callback=self.on_setpoint,
                                                      qos_profile=1)
-        self.depth_sub = self.create_subscription(msg_type=DepthStamped,
-                                                  topic='depth',
+        self.xy_pos_sub = self.create_subscription(msg_type=PoseStamped,
+                                                  topic='position_estimate',
                                                   callback=self.on_depth,
                                                   qos_profile=1)
 
@@ -79,46 +86,47 @@ class DepthControlNode(Node):
         # We received a new setpoint! Let's save it, so that we can use it as
         # soon as we receive new depth data.
         self.current_setpoint = setpoint_msg.data
-        self.get_logger().info(
-            # f"Hi! I'm your controller running. "
-            f'I received a setpoint of {self.current_setpoint} m.',
-            throttle_duration_sec=1)
-
-    def on_depth(self, depth_msg: DepthStamped):
-        # We received a new depth message! Now we can get to action!
-        current_depth = depth_msg.depth
-
         # self.get_logger().info(
         #     # f"Hi! I'm your controller running. "
-        #     f'I received a depth of {current_depth} m.',
+        #     f'I received a setpoint of {self.current_setpoint} m.',
         #     throttle_duration_sec=1)
 
-        thrust = self.compute_control_output(current_depth)
+    def on_depth(self, pos_msg: PoseStamped):
+        # We received a new depth message! Now we can get to action!
+        current_position = pos_msg.pose.position
+        current_2D_pos = current_position.y
+
+        self.get_logger().info(
+            # f"Hi! I'm your controller running. "
+            f'I received a x-position of {current_2D_pos} m.',
+            throttle_duration_sec=1)
+
+        thrust = self.compute_control_output(current_2D_pos)
         # either set the timestamp to the current time or set it to the
         # stamp of `depth_msg` because the control output corresponds to this
         # point in time. Both choices are meaningful.
         # option 1:
         # now = self.get_clock().now()
         # option 2:
-        timestamp = rclpy.time.Time.from_msg(depth_msg.header.stamp)
+        timestamp = rclpy.time.Time.from_msg(pos_msg.header.stamp)
         self.publish_vertical_thrust(thrust=thrust, timestamp=timestamp)
 
     def publish_vertical_thrust(self, thrust: float,
                                 timestamp: rclpy.time.Time) -> None:
         msg = ActuatorSetpoint()
         # we want to set the vertical thrust exlusively. mask out xy-components.
-        msg.ignore_x = True
+        msg.ignore_x = False
         msg.ignore_y = True
-        msg.ignore_z = False
+        msg.ignore_z = True
 
-        msg.z = thrust
+        msg.x = thrust
 
         # Let's add a time stamp
         msg.header.stamp = timestamp.to_msg()
 
         self.thrust_pub.publish(msg)
 
-    def compute_control_output(self, current_depth: float) -> float:
+    def compute_control_output(self, current_2D_pos: float) -> float:
         # TODO: Apply the PID control
         # thrust_z = 0.5  # This doesn't seem right yet...
         t_now = self.get_clock().now()
@@ -126,7 +134,7 @@ class DepthControlNode(Node):
         dt = dt_as_duration_object = dt_as_duration_object.nanoseconds * 1e-9
 
 
-        error_depth = -current_depth + self.current_setpoint
+        error_depth = -current_2D_pos + self.current_setpoint
 
         error_dt = (error_depth - self.error_previous)/dt
         error_dt = 0.8 * self.error_dt_previous + 0.2 * error_dt
@@ -136,13 +144,13 @@ class DepthControlNode(Node):
         #     throttle_duration_sec=1)
 
         # thrust_z = error_depth * self.p_gain
-        thrust_z = (error_depth * self.p_gain + error_dt * self.d_gain/dt + self.i_gain * self.error_integrated * dt)
+        thrust = (error_depth * self.p_gain + error_dt * self.d_gain/dt + self.i_gain * self.error_integrated * dt)
 
-        if (thrust_z > 1.0):
-            thrust_z = 1.0
+        if (thrust > 1.0):
+            thrust = 1.0
 
-        elif (thrust_z < -1.0):
-            thrust_z = -1.0
+        elif (thrust < -1.0):
+            thrust = -1.0
 
         else:
             self.error_integrated += error_depth * dt
@@ -151,12 +159,12 @@ class DepthControlNode(Node):
         self.error_previous = error_depth
         self.error_dt_previous = error_dt
 
-        return thrust_z
+        return thrust
 
 
 def main():
     rclpy.init()
-    node = DepthControlNode()
+    node = PosControlNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
