@@ -17,18 +17,14 @@ class PosControlNode(Node):
     def __init__(self):
         super().__init__(node_name='xy_pos_controller')
 
-        self.current_setpoint = 2.0
-        self.current_2D_pos = 0.0
+        self.current_setpoint = np.zeros(2)
+        self.current_2D_pos = np.zeros(2)
         self.init_params()
 
-        # self.p_gain = 0.5
-        # self.d_gain = 0.005
-        # self.i_gain = 0.1
-
         self.t_previous = self.get_clock().now()
-        self.error_previous = 0.0
-        self.error_dt_previous = 0.0
-        self.error_integrated = 0.0
+        self.error_previous = np.zeros(2)
+        self.error_dt_previous = np.zeros(2)
+        self.error_integrated = np.zeros(2)
 
 
         self.thrust_pub = self.create_publisher(msg_type=ActuatorSetpoint,
@@ -39,6 +35,11 @@ class PosControlNode(Node):
                                                      topic='xy_pos_setpoint',
                                                      callback=self.on_setpoint,
                                                      qos_profile=1)
+
+        # self.yaw_angle_sub = self.create_subscription(msg_type=Float64Stamped,
+        #                                              topic='xy_pos_setpoint',
+        #                                              callback=self.on_setpoint,
+        #                                              qos_profile=1)
         self.xy_pos_sub = self.create_subscription(msg_type=PoseStamped,
                                                   topic='position_estimate',
                                                   callback=self.on_depth,
@@ -94,14 +95,20 @@ class PosControlNode(Node):
     def on_depth(self, pos_msg: PoseStamped):
         # We received a new depth message! Now we can get to action!
         current_position = pos_msg.pose.position
-        current_2D_pos = current_position.y
+        yaw = np.pi / 2
+        current_2D_pos_world = np.array([current_position.x,current_position.y])
+        rotation_world_robot = np.array([[np.cos(yaw), -np.sin(yaw)],
+                                        [np.sin(yaw), np.cos(yaw)]])
+
+        current_2D_pos_robot = current_2D_pos_world @ rotation_world_robot
+        # current_2D_pos_world = np.array([current_position.y,-current_position.x])
 
         self.get_logger().info(
             # f"Hi! I'm your controller running. "
-            f'I received a x-position of {current_2D_pos} m.',
+            f'I received a x-position of {current_2D_pos_robot} m.',
             throttle_duration_sec=1)
 
-        thrust = self.compute_control_output(current_2D_pos)
+        thrust = self.compute_control_output(current_2D_pos_robot)
         # either set the timestamp to the current time or set it to the
         # stamp of `depth_msg` because the control output corresponds to this
         # point in time. Both choices are meaningful.
@@ -111,22 +118,23 @@ class PosControlNode(Node):
         timestamp = rclpy.time.Time.from_msg(pos_msg.header.stamp)
         self.publish_vertical_thrust(thrust=thrust, timestamp=timestamp)
 
-    def publish_vertical_thrust(self, thrust: float,
+    def publish_vertical_thrust(self, thrust: np.ndarray,
                                 timestamp: rclpy.time.Time) -> None:
         msg = ActuatorSetpoint()
         # we want to set the vertical thrust exlusively. mask out xy-components.
         msg.ignore_x = False
-        msg.ignore_y = True
+        msg.ignore_y = False
         msg.ignore_z = True
 
-        msg.x = thrust
+        msg.x, msg.y = thrust
+        # msg.x = thrust[1]
 
         # Let's add a time stamp
         msg.header.stamp = timestamp.to_msg()
 
         self.thrust_pub.publish(msg)
 
-    def compute_control_output(self, current_2D_pos: float) -> float:
+    def compute_control_output(self, current_2D_pos: np.ndarray) -> np.ndarray:
         # TODO: Apply the PID control
         # thrust_z = 0.5  # This doesn't seem right yet...
         t_now = self.get_clock().now()
@@ -146,14 +154,14 @@ class PosControlNode(Node):
         # thrust_z = error_depth * self.p_gain
         thrust = (error_depth * self.p_gain + error_dt * self.d_gain/dt + self.i_gain * self.error_integrated * dt)
 
-        if (thrust > 1.0):
-            thrust = 1.0
-
-        elif (thrust < -1.0):
-            thrust = -1.0
-
-        else:
-            self.error_integrated += error_depth * dt
+        # if (thrust > 1.0):
+        #     thrust = 1.0
+        #
+        # elif (thrust < -1.0):
+        #     thrust = -1.0
+        #
+        # else:
+        #     self.error_integrated += error_depth * dt
 
         self.t_previous = t_now
         self.error_previous = error_depth
