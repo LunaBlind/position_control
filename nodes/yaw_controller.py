@@ -8,6 +8,8 @@ from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from tf_transformations import euler_from_quaternion
 
+import rclpy.time
+
 
 class YawController(Node):
 
