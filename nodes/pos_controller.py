@@ -6,7 +6,7 @@ Its output is a thrust command to the BlueROV's actuators.
 """
 import rclpy
 import numpy as np
-from hippo_msgs.msg import ActuatorSetpoint, DepthStamped, Float64Stamped
+from hippo_msgs.msg import ActuatorSetpoint
 from geometry_msgs.msg import PoseStamped, PointStamped
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
@@ -50,6 +50,7 @@ class PosControlNode(Node):
                                                   callback=self.on_depth,
                                                   qos_profile=1)
 
+        # might be interesting to compare that to the EKF value 
         # self.depth_sub = self.create_subscription(msg_type=DepthStamped,
         #                                           topic='depth',
         #                                           callback=self.on_depth,
@@ -95,17 +96,13 @@ class PosControlNode(Node):
 
     def on_setpoint(self, setpoint_msg: PointStamped):
         # We received a new setpoint! Let's save it, so that we can use it as
-        # soon as we receive new depth data.
+        # soon as we receive new position data.
         self.current_setpoint[0] = setpoint_msg.point.x
         self.current_setpoint[1] = setpoint_msg.point.y
         self.current_setpoint[2] = setpoint_msg.point.z
-        # self.get_logger().info(
-        #     # f"Hi! I'm your controller running. "
-        #     f'I received a setpoint of {self.current_setpoint} m.',
-        #     throttle_duration_sec=1)
 
     def on_depth(self, pos_msg: PoseStamped):
-        # We received a new depth message! Now we can get to action!
+        # We received a new position message! Now we can get to action!
         current_position = pos_msg.pose.position
         yaw = np.pi/2
         # q = pos_msg.pose.orientation
@@ -160,10 +157,11 @@ class PosControlNode(Node):
         error_dt = 0.8 * self.error_dt_previous + 0.2 * error_dt
         thrust = (error * self.p_gain + error_dt * self.d_gain/dt + self.i_gain * self.error_integrated * dt)
 
+        # only integrate error if within limits (anti-reset windup)
         thrust_direction_within_limits = self.within_limits(thrust)
         self.error_integrated[thrust_direction_within_limits] += error[thrust_direction_within_limits] * np.squeeze(dt)
 
-
+        # limit output to physical limits of the robot (or as in the final project to half of that)
         lower_limit, upper_limit = self.output_limits
         np.clip(thrust, lower_limit, upper_limit)
 

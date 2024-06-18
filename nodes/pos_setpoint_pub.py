@@ -5,11 +5,9 @@ the setpoint jumps between two different depth values with a set duration.
 You can change this code to try out other setpoint functions, e.g. a sin wave.
 """
 import rclpy
-# from hippo_msgs.msg import Float64Stamped
 from geometry_msgs.msg import PoseStamped, PointStamped
 from rclpy.node import Node
 
-from rcl_interfaces.msg import SetParametersResult
 import rclpy.parameter
 import rclpy.time
 
@@ -30,14 +28,13 @@ class PosSetpointNode(Node):
                           [1.0, 1.0, -1.2],
                           [1.0, 2.0, -0.8],
                           ]
-        self.current_setpoint = self.setpoints[0]
         self.current_position = np.zeros(3)
         self.epsilon = 0.2
         self.index = 0
 
         self.pos_sub = self.create_subscription(msg_type=PoseStamped,
                                                   topic='position_estimate',
-                                                  callback=self.check_for_arrival,
+                                                  callback=self.set_current_position,
                                                   qos_profile=1)
 
         self.pos_setpoint_pub = self.create_publisher(msg_type=PointStamped,
@@ -59,6 +56,7 @@ class PosSetpointNode(Node):
 
         error = setpoint - self.current_position
 
+        # set new setpoint if close to current setpoint
         if np.linalg.norm(error) < self.epsilon:
             self.get_logger().info(f"Reached setpoint: {setpoint}")
             self.index += 1
@@ -67,8 +65,7 @@ class PosSetpointNode(Node):
                 self.timer.cancel()
                 return
  
-    def check_for_arrival(self, pose_msg: PoseStamped):
-        """Check if setpoint is reached"""
+    def set_current_position(self, pose_msg: PoseStamped):
         current_robot_pos = pose_msg.pose.position
         self.current_position = np.array([current_robot_pos.x,
                                          current_robot_pos.y,
