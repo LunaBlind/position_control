@@ -27,25 +27,11 @@ def generate_launch_description() -> LaunchDescription:
         PushRosNamespace(LaunchConfiguration('vehicle_name')),
         Node(executable='yaw_controller.py', package='position_control'),
         # add your other controllers here, for example:
-        Node(executable='xy_controller.py', package='position_control',
+        Node(executable='pos_controller.py', package='position_control',
              parameters=[
                  LaunchConfiguration('controller_config_file'),
                  ]),
     ])
     
-    package_path = get_package_share_path('depth_control')
-
-    launch_path = str(package_path / 'launch/depth.launch.py')
-
-    source = PythonLaunchDescriptionSource(launch_path)
-
-    launch_args = {'vehicle_name': LaunchConfiguration('vehicle_name')}
-
-    action = IncludeLaunchDescription(source,
-
-                                      launch_arguments=launch_args.items())
-
-    launch_description.add_action(action)
-
     launch_description.add_action(group)
     return launch_description

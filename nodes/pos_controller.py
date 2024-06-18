@@ -7,7 +7,7 @@ Its output is a thrust command to the BlueROV's actuators.
 import rclpy
 import numpy as np
 from hippo_msgs.msg import ActuatorSetpoint, DepthStamped, Float64Stamped
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PointStamped
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
 
@@ -15,24 +15,26 @@ from rcl_interfaces.msg import SetParametersResult
 class PosControlNode(Node):
 
     def __init__(self):
-        super().__init__(node_name='xy_pos_controller')
+        super().__init__(node_name='pos_controller')
 
-        self.current_setpoint = np.zeros(2)
-        self.current_2D_pos = np.zeros(2)
+        self.current_setpoint = np.array([2.5,-1.5, -0.5])
+        self.current_robot_pos = np.zeros(3)
         self.init_params()
 
         self.t_previous = self.get_clock().now()
-        self.error_previous = np.zeros(2)
-        self.error_dt_previous = np.zeros(2)
-        self.error_integrated = np.zeros(2)
+        self.error_previous = np.zeros(3)
+        self.error_dt_previous = np.zeros(3)
+        self.error_integrated = np.zeros(3)
+
+        self.output_limits = np.array([-1,1])
 
 
         self.thrust_pub = self.create_publisher(msg_type=ActuatorSetpoint,
                                                 topic='thrust_setpoint',
                                                 qos_profile=1)
 
-        self.setpoint_sub = self.create_subscription(msg_type=Float64Stamped,
-                                                     topic='xy_pos_setpoint',
+        self.setpoint_sub = self.create_subscription(msg_type=PointStamped,
+                                                     topic='pos_setpoint',
                                                      callback=self.on_setpoint,
                                                      qos_profile=1)
 
@@ -40,10 +42,15 @@ class PosControlNode(Node):
         #                                              topic='xy_pos_setpoint',
         #                                              callback=self.on_setpoint,
         #                                              qos_profile=1)
-        self.xy_pos_sub = self.create_subscription(msg_type=PoseStamped,
+        self.pos_sub = self.create_subscription(msg_type=PoseStamped,
                                                   topic='position_estimate',
                                                   callback=self.on_depth,
                                                   qos_profile=1)
+
+        # self.depth_sub = self.create_subscription(msg_type=DepthStamped,
+        #                                           topic='depth',
+        #                                           callback=self.on_depth,
+        #                                           qos_profile=1)
 
     def init_params(self):
         self.declare_parameters(
@@ -96,19 +103,22 @@ class PosControlNode(Node):
         # We received a new depth message! Now we can get to action!
         current_position = pos_msg.pose.position
         yaw = np.pi / 2
-        current_2D_pos_world = np.array([current_position.x,current_position.y])
-        rotation_world_robot = np.array([[np.cos(yaw), -np.sin(yaw)],
-                                        [np.sin(yaw), np.cos(yaw)]])
+        current_2D_pos_world = np.array([current_position.x,
+                                         current_position.y,
+                                         current_position.z])
+        rotation_world_robot = np.array([[np.cos(yaw), -np.sin(yaw), 0],
+                                        [np.sin(yaw), np.cos(yaw), 0],
+                                         [0,0,1]])
 
-        current_2D_pos_robot = current_2D_pos_world @ rotation_world_robot
+        current_robot_pos = current_2D_pos_world @ rotation_world_robot
         # current_2D_pos_world = np.array([current_position.y,-current_position.x])
 
         self.get_logger().info(
             # f"Hi! I'm your controller running. "
-            f'I received a x-position of {current_2D_pos_robot} m.',
+            f'I received a position of {current_robot_pos} m.',
             throttle_duration_sec=1)
 
-        thrust = self.compute_control_output(current_2D_pos_robot)
+        thrust = self.compute_control_output(current_robot_pos)
         # either set the timestamp to the current time or set it to the
         # stamp of `depth_msg` because the control output corresponds to this
         # point in time. Both choices are meaningful.
@@ -124,17 +134,16 @@ class PosControlNode(Node):
         # we want to set the vertical thrust exlusively. mask out xy-components.
         msg.ignore_x = False
         msg.ignore_y = False
-        msg.ignore_z = True
+        msg.ignore_z = False
 
-        msg.x, msg.y = thrust
-        # msg.x = thrust[1]
+        msg.x, msg.y, msg.z = thrust
 
         # Let's add a time stamp
         msg.header.stamp = timestamp.to_msg()
 
         self.thrust_pub.publish(msg)
 
-    def compute_control_output(self, current_2D_pos: np.ndarray) -> np.ndarray:
+    def compute_control_output(self, current_robot_pos: np.ndarray) -> np.ndarray:
         # TODO: Apply the PID control
         # thrust_z = 0.5  # This doesn't seem right yet...
         t_now = self.get_clock().now()
@@ -142,32 +151,32 @@ class PosControlNode(Node):
         dt = dt_as_duration_object = dt_as_duration_object.nanoseconds * 1e-9
 
 
-        error_depth = -current_2D_pos + self.current_setpoint
+        error = -current_robot_pos + self.current_setpoint
 
-        error_dt = (error_depth - self.error_previous)/dt
+        error_dt = (error - self.error_previous)/dt
         error_dt = 0.8 * self.error_dt_previous + 0.2 * error_dt
-        # self.get_logger().info(
-        #     # f"Hi! I'm your controller running. "
-        #     f'I received a depth_error of {error_depth} m.',
-        #     throttle_duration_sec=1)
+        thrust = (error * self.p_gain + error_dt * self.d_gain/dt + self.i_gain * self.error_integrated * dt)
 
-        # thrust_z = error_depth * self.p_gain
-        thrust = (error_depth * self.p_gain + error_dt * self.d_gain/dt + self.i_gain * self.error_integrated * dt)
+        thrust_direction_within_limits = self.within_limits(thrust)
+        self.error_integrated[thrust_direction_within_limits] += error[thrust_direction_within_limits] * np.squeeze(dt)
 
-        # if (thrust > 1.0):
-        #     thrust = 1.0
-        #
-        # elif (thrust < -1.0):
-        #     thrust = -1.0
-        #
-        # else:
-        #     self.error_integrated += error_depth * dt
+
+        lower_limit, upper_limit = self.output_limits
+        np.clip(thrust, lower_limit, upper_limit)
 
         self.t_previous = t_now
-        self.error_previous = error_depth
+        self.error_previous = error
         self.error_dt_previous = error_dt
 
         return thrust
+
+    def within_limits(self, output):
+        """Check which indices of the output are within the specified limits."""
+        lower_limit, upper_limit = self.output_limits
+        within_lower = output >= lower_limit
+        within_upper = output <= upper_limit
+        within_limits_indices = np.where(within_lower & within_upper)[0]
+        return within_limits_indices
 
 
 def main():
