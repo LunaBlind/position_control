@@ -6,12 +6,14 @@ You can change this code to try out other setpoint functions, e.g. a sin wave.
 """
 import rclpy
 # from hippo_msgs.msg import Float64Stamped
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import PoseStamped, PointStamped
 from rclpy.node import Node
 
 from rcl_interfaces.msg import SetParametersResult
 import rclpy.parameter
 import rclpy.time
+
+import numpy as np
 
 class PosSetpointNode(Node):
 
@@ -23,28 +25,54 @@ class PosSetpointNode(Node):
         # change these parameters to adjust the setpoints
         # ... or change implementation details below to achieve other setpoint
         # functions.
-        self.setpoint_1 = [1.0, -2.0, -0.2]  # in m
-        self.setpoint_2 = [2.0, -1.0, -1.2]  # in m
-        self.duration = 10.0  # in seconds
+        self.setpoints = [[1.0, 1.0, -0.5],
+                          [0.5, 2.0, -0.2],
+                          [1.0, 1.0, -1.2],
+                          [1.0, 2.0, -0.8],
+                          ]
+        self.current_setpoint = self.setpoints[0]
+        self.current_position = np.zeros(3)
+        self.epsilon = 0.2
+        self.index = 0
+
+        self.pos_sub = self.create_subscription(msg_type=PoseStamped,
+                                                  topic='position_estimate',
+                                                  callback=self.check_for_arrival,
+                                                  qos_profile=1)
 
         self.pos_setpoint_pub = self.create_publisher(msg_type=PointStamped,
                                                         topic='pos_setpoint',
                                                         qos_profile=1)
-        self.timer = self.create_timer(timer_period_sec=1 / 50,
-                                       callback=self.on_timer)
+        self.timer = self.create_timer(timer_period_sec=1 ,
+                                       callback=self.timer_callback)
 
-    def on_timer(self) -> None:
-        # change this for other setpoint functions
-        now = self.get_clock().now()
-        time = self.start_time - now
-        i = time.nanoseconds * 1e-9 % (self.duration * 2)
-        if i > (self.duration):
-            setpoint = self.setpoint_1
-        else:
-            setpoint = self.setpoint_2
+    def timer_callback(self):
+        if self.index >= len(self.setpoints):
+            self.get_logger().info("All setpoints reached")
+            self.timer.cancel()
+            return
+
+        setpoint = self.setpoints[self.index]
 
         now = self.get_clock().now()
         self.publish_setpoint(setpoint=setpoint, now=now)
+
+        error = setpoint - self.current_position
+
+        if np.linalg.norm(error) < self.epsilon:
+            self.get_logger().info(f"Reached setpoint: {setpoint}")
+            self.index += 1
+            if self.index >= len(self.setpoints):
+                self.get_logger().info("All setpoints reached")
+                self.timer.cancel()
+                return
+ 
+    def check_for_arrival(self, pose_msg: PoseStamped):
+        """Check if setpoint is reached"""
+        current_robot_pos = pose_msg.pose.position
+        self.current_position = np.array([current_robot_pos.x,
+                                         current_robot_pos.y,
+                                         current_robot_pos.z])
 
     def publish_setpoint(self, setpoint: list, now: rclpy.time.Time) -> None:
         msg = PointStamped()
