@@ -26,6 +26,7 @@ def generate_launch_description() -> LaunchDescription:
     group = GroupAction([
         PushRosNamespace(LaunchConfiguration('vehicle_name')),
         Node(executable='yaw_controller.py', package='position_control'),
+        Node(executable='pos_setpoint_pub.py', package='position_control'),
         # add your other controllers here, for example:
         Node(executable='pos_controller.py', package='position_control',
              parameters=[

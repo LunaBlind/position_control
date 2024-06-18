@@ -90,10 +90,12 @@ class PosControlNode(Node):
         return SetParametersResult(successful=True, reason='Parameter set')
 
 
-    def on_setpoint(self, setpoint_msg: Float64Stamped):
+    def on_setpoint(self, setpoint_msg: PointStamped):
         # We received a new setpoint! Let's save it, so that we can use it as
         # soon as we receive new depth data.
-        self.current_setpoint = setpoint_msg.data
+        self.current_setpoint[0] = setpoint_msg.point.x
+        self.current_setpoint[1] = setpoint_msg.point.y
+        self.current_setpoint[2] = setpoint_msg.point.z
         # self.get_logger().info(
         #     # f"Hi! I'm your controller running. "
         #     f'I received a setpoint of {self.current_setpoint} m.',
