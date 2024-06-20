@@ -12,6 +12,16 @@ import rclpy.parameter
 import rclpy.time
 
 import numpy as np
+from enum import Enum, auto
+
+
+class State(Enum):
+    UNSET = auto()
+    INIT = auto()
+    IDLE = auto()
+    MOVE_TO_START = auto()
+    EN_ROUTE = auto()
+
 
 class PosSetpointNode(Node):
 
@@ -19,18 +29,27 @@ class PosSetpointNode(Node):
         super().__init__(node_name='pos_setpoint_publisher')
 
         self.start_time = self.get_clock().now()
+        self.state = State.MOVE_TO_START
 
         # change these parameters to adjust the setpoints
         # ... or change implementation details below to achieve other setpoint
         # functions.
-        self.setpoints = [[1.0, 1.0, -0.5],
-                          [0.5, 2.0, -0.2],
-                          [1.0, 1.0, -1.2],
-                          [1.0, 2.0, -0.8],
+        self.setpoints = [[1.0, 2.0, -0.5],
+                          [0.5, 2.0, -0.5],
+                          [0.5, 1.0, -0.5],
+                          [1.0, 1.0, -0.5],
+                          [1.0, 2.0, -0.5],
                           ]
+        self.waypoints = []
+        self.current_waypoint = np.zeros(3)
+        self.num_of_waypoints = 3
+
+
         self.current_position = np.zeros(3)
+        self.current_setpoint = self.setpoints[0]
         self.epsilon = 0.2
         self.index = 0
+        self.waypoint_index = 0
 
         self.pos_sub = self.create_subscription(msg_type=PoseStamped,
                                                   topic='position_estimate',
@@ -47,23 +66,62 @@ class PosSetpointNode(Node):
         if self.index >= len(self.setpoints):
             self.get_logger().info("All setpoints reached")
             self.timer.cancel()
+            self.state = State.IDLE
             return
 
-        setpoint = self.setpoints[self.index]
+        if self.state == State.MOVE_TO_START:
+            self.current_setpoint = self.setpoints[0]
+            now = self.get_clock().now()
+            self.publish_setpoint(setpoint=self.current_setpoint, now=now)
 
-        now = self.get_clock().now()
-        self.publish_setpoint(setpoint=setpoint, now=now)
+            error = self.current_setpoint - self.current_position
 
-        error = setpoint - self.current_position
+            # set new setpoint if close to current setpoint
+            if np.linalg.norm(error) < self.epsilon:
+                self.get_logger().info(f"Reached setpoint: {self.current_setpoint}")
+                self.index += 1
+                self.state = State.INIT
 
-        # set new setpoint if close to current setpoint
-        if np.linalg.norm(error) < self.epsilon:
-            self.get_logger().info(f"Reached setpoint: {setpoint}")
-            self.index += 1
-            if self.index >= len(self.setpoints):
-                self.get_logger().info("All setpoints reached")
-                self.timer.cancel()
-                return
+        if self.state == State.INIT:
+            self.current_setpoint = self.setpoints[self.index]
+            self.create_square_path()
+            # self.get_logger().info("Test")
+
+            now = self.get_clock().now()
+            self.current_waypoint = self.waypoints[self.waypoint_index]
+            self.publish_setpoint(setpoint=self.current_waypoint, now=now)
+
+            self.state = State.EN_ROUTE
+
+        if self.state == State.EN_ROUTE:
+            self.current_waypoint = self.waypoints[self.waypoint_index]
+            error = self.current_waypoint - self.current_position
+
+            # set new setpoint if close to current setpoint
+            if np.linalg.norm(error) < self.epsilon * 2:
+                self.get_logger().info(f"Reached waypoint: {self.current_waypoint}")
+                self.waypoint_index += 1
+                now = self.get_clock().now()
+                self.publish_setpoint(setpoint=self.current_waypoint, now=now)
+                if self.waypoint_index >= len(self.waypoints):
+                    self.get_logger().info(f"Setpoint reached: {self.current_setpoint}")
+                    self.waypoint_index = 0
+                    self.index += 1
+                    self.state = State.INIT
+                    if self.index >= len(self.setpoints):
+                        self.get_logger().info("All setpoints reached")
+                        self.timer.cancel()
+                        self.state = State.IDLE
+                        return
+
+    def create_square_path(self):
+        """Creates equidistant points along the way between the current point 
+        and the goal"""
+        self.waypoints = np.linspace(self.current_position,
+                                     self.current_setpoint,
+                                     num=self.num_of_waypoints + 1, endpoint=True)
+
+        
  
     def set_current_position(self, pose_msg: PoseStamped):
         current_robot_pos = pose_msg.pose.position
