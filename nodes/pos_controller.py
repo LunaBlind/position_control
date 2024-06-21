@@ -46,9 +46,14 @@ class PosControlNode(Node):
                                                      qos_profile=1)
 
         self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-                                                  topic='position_estimate',
+                                                  topic='ground_truth/pose',
                                                   callback=self.on_depth,
                                                   qos_profile=1)
+
+        # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
+        #                                           topic='position_estimate',
+        #                                           callback=self.on_depth,
+        #                                           qos_profile=1)
 
         # might be interesting to compare that to the EKF value 
         # self.depth_sub = self.create_subscription(msg_type=DepthStamped,

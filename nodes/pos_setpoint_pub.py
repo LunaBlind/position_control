@@ -51,8 +51,13 @@ class PosSetpointNode(Node):
         self.index = 0
         self.waypoint_index = 0
 
+        # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
+        #                                           topic='position_estimate',
+        #                                           callback=self.set_current_position,
+        #                                           qos_profile=1)
+
         self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-                                                  topic='position_estimate',
+                                                  topic='ground_truth/pose',
                                                   callback=self.set_current_position,
                                                   qos_profile=1)
 
@@ -63,14 +68,15 @@ class PosSetpointNode(Node):
                                        callback=self.timer_callback)
 
     def timer_callback(self):
-        if self.index >= len(self.setpoints):
-            self.get_logger().info("All setpoints reached")
-            self.timer.cancel()
-            self.state = State.IDLE
-            return
+        # if self.index >= len(self.setpoints):
+        #     self.get_logger().info("All setpoints reached")
+        #     self.timer.cancel()
+        #     self.state = State.IDLE
+        #     return
 
         if self.state == State.MOVE_TO_START:
-            self.current_setpoint = self.setpoints[0]
+            self.index = 0
+            self.current_setpoint = self.setpoints[self.index]
             now = self.get_clock().now()
             self.publish_setpoint(setpoint=self.current_setpoint, now=now)
 
@@ -110,8 +116,8 @@ class PosSetpointNode(Node):
                     self.state = State.INIT
                     if self.index >= len(self.setpoints):
                         self.get_logger().info("All setpoints reached")
-                        self.timer.cancel()
-                        self.state = State.IDLE
+                        # self.timer.cancel()
+                        self.state = State.MOVE_TO_START
                         return
 
     def create_square_path(self):
