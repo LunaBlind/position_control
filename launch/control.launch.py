@@ -16,7 +16,7 @@ def generate_launch_description() -> LaunchDescription:
     arg = DeclareLaunchArgument('vehicle_name')
     launch_description.add_action(arg)
 
-    package_path = get_package_share_path('depth_control')
+    package_path = get_package_share_path('position_control')
     param_file_path = str(package_path / 'config/controller_params.yaml')
     # expose the parameter to the launch command line
     param_file_arg = DeclareLaunchArgument('controller_config_file',

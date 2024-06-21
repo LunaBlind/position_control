@@ -34,20 +34,20 @@ class PosSetpointNode(Node):
         # change these parameters to adjust the setpoints
         # ... or change implementation details below to achieve other setpoint
         # functions.
-        self.setpoints = [[1.0, 2.0, -0.5],
-                          [0.5, 2.0, -0.5],
-                          [0.5, 1.0, -0.5],
-                          [1.0, 1.0, -0.5],
-                          [1.0, 2.0, -0.5],
+        self.setpoints = [[1.5, 1.0, -0.5],
+                          [1.5, 1.0, -0.5],
+                          [1.5, 2.0, -0.5],
+                          [0.0, 2.0, -0.5],
+                          [0.0, 0.0, -0.5],
                           ]
         self.waypoints = []
         self.current_waypoint = np.zeros(3)
-        self.num_of_waypoints = 3
+        self.num_of_waypoints = 5
 
 
         self.current_position = np.zeros(3)
         self.current_setpoint = self.setpoints[0]
-        self.epsilon = 0.2
+        self.epsilon = 0.3
         self.index = 0
         self.waypoint_index = 0
 
@@ -90,8 +90,8 @@ class PosSetpointNode(Node):
 
         if self.state == State.INIT:
             self.current_setpoint = self.setpoints[self.index]
-            self.create_square_path()
-            # self.get_logger().info("Test")
+            # self.create_square_path()
+            self.create_circular_path()
 
             now = self.get_clock().now()
             self.current_waypoint = self.waypoints[self.waypoint_index]
@@ -121,13 +121,30 @@ class PosSetpointNode(Node):
                         return
 
     def create_square_path(self):
-        """Creates equidistant points along the way between the current point 
+        """Creates equidistant points on a line between the current point 
         and the goal"""
         self.waypoints = np.linspace(self.current_position,
                                      self.current_setpoint,
                                      num=self.num_of_waypoints + 1, endpoint=True)
 
-        
+    def create_circular_path(self):
+        """Creates equidistant points on a half circle between the current point 
+        and the goal"""
+        distance = self.current_setpoint - self.current_position
+        radius = np.linalg.norm(distance[:-1],ord=2)/2 
+        center_point = self.current_position + distance/2
+
+        angle = np.arctan2(distance[1], distance[0])
+        self.get_logger().info(f"Angle between points: {angle}")
+        thetas = np.linspace(0, np.pi, num=self.num_of_waypoints + 1, endpoint=True)
+        waypoints = []
+
+        for theta in thetas:
+            waypoint = center_point + (np.array([-radius * np.cos(angle-theta + np.pi/2), radius * np.sin(angle-theta + np.pi/2), 0]))
+            # waypoint = center_point + (np.array([-radius * np.cos(angle), radius * np.sin(angle-theta + np.pi/2), 0]))
+            waypoints.append(waypoint)
+        self.waypoints = waypoints
+        self.get_logger().info(f"Waypoints: {waypoints}")
  
     def set_current_position(self, pose_msg: PoseStamped):
         current_robot_pos = pose_msg.pose.position
