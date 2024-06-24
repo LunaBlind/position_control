@@ -167,7 +167,7 @@ class PositionKalmanFilter(Node):
 
     def measurement_update(self, measured_distances):
         vehicle_position = np.copy(self.state[0:3, 0])
-        sensor_position = vehicle_position + np.array([0.2, 0.0, 0.1]).T
+        sensor_position = vehicle_position 
         sensor_to_tag = sensor_position - self.tag_poses
         z_est = np.linalg.norm(sensor_to_tag, axis=1)
 
