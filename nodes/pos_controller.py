@@ -65,22 +65,31 @@ class PosControlNode(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ('gains.p', rclpy.parameter.Parameter.Type.DOUBLE),
-                ('gains.i', rclpy.parameter.Parameter.Type.DOUBLE),
-                ('gains.d', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('gains_xy.p', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('gains_xy.i', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('gains_xy.d', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('gains_z.p', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('gains_z.i', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('gains_z.d', rclpy.parameter.Parameter.Type.DOUBLE),
             ],
         )
-        param = self.get_parameter('gains.p')
-        self.get_logger().info(f'{param.name}={param.value}')
-        self.p_gain = param.value
+        param_xy = self.get_parameter('gains_xy.p')
+        self.get_logger().info(f'{param_xy.name}={param_xy.value}')
+        param_z = self.get_parameter('gains_z.p')
+        self.get_logger().info(f'{param_z.name}={param_z.value}')
+        self.p_gain = np.array([param_xy.value, param_xy.value, param_z.value])
 
-        param = self.get_parameter('gains.i')
-        self.get_logger().info(f'{param.name}={param.value}')
-        self.i_gain = param.value
+        param_xy = self.get_parameter('gains_xy.i')
+        self.get_logger().info(f'{param_xy.name}={param_xy.value}')
+        param_z = self.get_parameter('gains_z.i')
+        self.get_logger().info(f'{param_z.name}={param_z.value}')
+        self.i_gain = np.array([param_xy.value, param_xy.value, param_z.value])
 
-        param = self.get_parameter('gains.d')
-        self.get_logger().info(f'{param.name}={param.value}')
-        self.d_gain = param.value
+        param_xy = self.get_parameter('gains_xy.d')
+        self.get_logger().info(f'{param_xy.name}={param_xy.value}')
+        param_z = self.get_parameter('gains_z.d')
+        self.get_logger().info(f'{param_z.name}={param_z.value}')
+        self.d_gain = param_xy.value
 
         self.add_on_set_parameters_callback(self.on_params_changed)
 
@@ -88,11 +97,17 @@ class PosControlNode(Node):
         param: rclpy.parameter.Parameter
         for param in params:
             self.get_logger().info(f'Try to set [{param.name}] = {param.value}')
-            if param.name == 'gains.p':
+            if param.name == 'gains_xy.p':
                 self.p_gain = param.value
-            elif param.name == 'gains.i':
+            elif param.name == 'gains_xy.i':
                 self.i_gain = param.value
-            elif param.name == 'gains.d':
+            elif param.name == 'gains_xy.d':
+                self.d_gain = param.value
+            elif param.name == 'gains_z.p':
+                self.p_gain = param.value
+            elif param.name == 'gains_z.i':
+                self.i_gain = param.value
+            elif param.name == 'gains_z.d':
                 self.d_gain = param.value
             else:
                 continue
