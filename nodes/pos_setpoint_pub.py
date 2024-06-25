@@ -34,24 +34,34 @@ class PosSetpointNode(Node):
         # change these parameters to adjust the setpoints
         # ... or change implementation details below to achieve other setpoint
         # functions.
-        self.setpoints = [[0.0, 0.0, -0.5],
-                          [1.5, 0.0, -0.5],
-                          [1.5, 1.5, -0.5],
-                          [0.0, 1.5, -0.5],
-                          [0.0, 0.0, -0.5],
+
+        # square setpoints 
+        self.setpoints = [[0.5, 1.0, -0.5],
+                          [1.5, 1.0, -0.5],
+                          [1.5, 2.5, -0.5],
+                          [0.5, 2.5, -0.5],
+                          [0.5, 1.0, -0.5],
                           ]
+
+        # # diagonal setpoints 
+        # self.setpoints = [[1.0, 0.0, -0.5],
+        #                   [2.0, 1.0, -0.5],
+        #                   [1.0, 2.0, -0.5],
+        #                   [0.0, 1.0, -0.5],
+        #                   [1.0, 0.0, -0.5],
+        #                   ]
+
         self.waypoints = []
         self.current_waypoint = np.zeros(3)
-        self.num_of_waypoints = 5
+        self.num_of_waypoints = 20
 
 
         self.current_position = np.zeros(3)
         self.current_setpoint = self.setpoints[0]
         self.previous_setpoint = np.zeros(3)
-        self.epsilon = 0.3
+        self.epsilon = 0.01
         self.index = 0
         self.waypoint_index = 0
-        self.sleep_timer = 0
 
         # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
         #                                           topic='position_estimate',
@@ -66,7 +76,12 @@ class PosSetpointNode(Node):
         self.pos_setpoint_pub = self.create_publisher(msg_type=PointStamped,
                                                         topic='pos_setpoint',
                                                         qos_profile=1)
-        self.timer = self.create_timer(timer_period_sec=1 ,
+
+        self.pos_error_pub = self.create_publisher(msg_type=PointStamped,
+                                                        topic='pos_error',
+                                                        qos_profile=1)
+
+        self.timer = self.create_timer(timer_period_sec=1/10 ,
                                        callback=self.timer_callback)
 
     def timer_callback(self):
@@ -78,50 +93,49 @@ class PosSetpointNode(Node):
             self.publish_setpoint(setpoint=self.current_setpoint, now=now)
 
             error = self.current_setpoint - self.current_position
+            self.publish_error(error)
+            mean_squared_error = np.linalg.norm(error, ord=2)
 
             # set new setpoint if close to current setpoint
-            if np.linalg.norm(error) < self.epsilon:
+            if mean_squared_error < self.epsilon:
                 self.get_logger().info(f"Reached startpoint: {self.current_setpoint}")
                 self.index += 1
                 self.state = State.INIT
                 return
 
         if self.state == State.INIT:
-            if self.sleep_timer >=2:
-                self.current_setpoint = self.setpoints[self.index]
+            self.current_setpoint = self.setpoints[self.index]
 
-                # self.create_square_path()
+            # self.create_square_path()
 
-                self.create_circular_path()
+            self.create_circular_path()
 
-                now = self.get_clock().now()
-                self.current_waypoint = self.waypoints[self.waypoint_index]
-                self.publish_setpoint(setpoint=self.current_waypoint, now=now)
+            now = self.get_clock().now()
+            self.current_waypoint = self.waypoints[self.waypoint_index]
+            self.publish_setpoint(setpoint=self.current_waypoint, now=now)
 
-                self.state = State.EN_ROUTE
-            self.sleep_timer += 1
+            self.state = State.EN_ROUTE
 
         if self.state == State.EN_ROUTE:
             self.current_waypoint = self.waypoints[self.waypoint_index]
+            now = self.get_clock().now()
+            self.publish_setpoint(setpoint=self.current_waypoint, now=now)
             error = self.current_waypoint - self.current_position
+            self.publish_error(error)
+            mean_squared_error = np.linalg.norm(error, ord=2)
 
             # set new setpoint if close to current setpoint
-            if np.linalg.norm(error) < self.epsilon * 2:
-                # self.get_logger().info(f"Reached waypoint: {self.current_waypoint}")
+            if mean_squared_error < self.epsilon:
                 self.waypoint_index += 1
-                now = self.get_clock().now()
-                self.publish_setpoint(setpoint=self.current_waypoint, now=now)
-                # self.get_logger().info(f"En Route move setpoint: {self.current_waypoint}")
+                self.get_logger().info(f"Waypoint reached: {self.current_waypoint}")
                 if self.waypoint_index >= len(self.waypoints):
-                    # self.get_logger().info(f"Setpoint reached: {self.current_setpoint}")
+                    self.get_logger().info(f"Setpoint reached: {self.current_setpoint}")
                     self.waypoint_index = 0
                     self.index += 1
                     self.previous_setpoint = self.current_setpoint
-                    self.sleep_timer = 0
                     self.state = State.INIT
                     if self.index >= len(self.setpoints):
                         self.get_logger().info("All setpoints reached")
-                        # self.timer.cancel()
                         self.state = State.MOVE_TO_START
                         return
 
@@ -162,6 +176,14 @@ class PosSetpointNode(Node):
         msg.point.z = setpoint[2]
         msg.header.stamp = self.get_clock().now().to_msg()
         self.pos_setpoint_pub.publish(msg)
+
+    def publish_error(self, error: np.ndarray) -> None:
+        msg = PointStamped()
+        msg.point.x = error[0]
+        msg.point.y = error[1]
+        msg.point.z = error[2]
+        msg.header.stamp = self.get_clock().now().to_msg()
+        self.pos_error_pub.publish(msg)
 
 
 def main():
