@@ -21,13 +21,13 @@ class PosControlNode(Node):
     def __init__(self):
         super().__init__(node_name='pos_controller')
 
-        self.current_setpoint = np.array([1.0, 1.0, -0.5])
+        self.current_setpoint = np.array([0.5, 1.0, -0.5])
         self.current_robot_pos = np.zeros(3)
         self.init_params()
 
         self.t_previous = self.get_clock().now()
 
-        self.epsilon = 0.1
+        self.epsilon = 0.005
         self.error_previous = np.zeros(3)
         self.error_dt_previous = np.zeros(3)
         self.error_integrated = np.zeros(3)
@@ -45,15 +45,15 @@ class PosControlNode(Node):
                                                      callback=self.on_setpoint,
                                                      qos_profile=1)
 
-        self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-                                                  topic='ground_truth/pose',
-                                                  callback=self.on_depth,
-                                                  qos_profile=1)
-
         # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-        #                                           topic='position_estimate',
+        #                                           topic='ground_truth/pose',
         #                                           callback=self.on_depth,
         #                                           qos_profile=1)
+        #
+        self.pos_sub = self.create_subscription(msg_type=PoseStamped,
+                                                  topic='position_estimate',
+                                                  callback=self.on_depth,
+                                                  qos_profile=1)
 
         # might be interesting to compare that to the EKF value 
         # self.depth_sub = self.create_subscription(msg_type=DepthStamped,
@@ -188,6 +188,8 @@ class PosControlNode(Node):
         self.t_previous = t_now
         self.error_previous = error
         self.error_dt_previous = error_dt
+
+        thrust[2] += -0.045
 
         return thrust
 
