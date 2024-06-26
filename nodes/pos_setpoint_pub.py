@@ -16,11 +16,16 @@ from enum import Enum, auto
 
 
 class State(Enum):
-    UNSET = auto()
     INIT = auto()
     IDLE = auto()
     MOVE_TO_START = auto()
     EN_ROUTE = auto()
+    TRANSPORT = auto()
+    LIFT = auto()
+    LOWER = auto()
+    GRASP = auto()
+    DROP = auto()
+    DRIVE_LOOPS = auto()
 
 
 class PosSetpointNode(Node):
@@ -30,18 +35,19 @@ class PosSetpointNode(Node):
 
         self.start_time = self.get_clock().now()
         self.state = State.MOVE_TO_START
+        self.previous_state = State.MOVE_TO_START
 
         # change these parameters to adjust the setpoints
         # ... or change implementation details below to achieve other setpoint
         # functions.
 
-        # square setpoints 
-        self.setpoints = [[0.5, 1.0, -0.5],
-                          [1.5, 1.0, -0.5],
-                          [1.5, 2.5, -0.5],
-                          [0.5, 2.5, -0.5],
-                          [0.5, 1.0, -0.5],
-                          ]
+        # # square setpoints 
+        # self.setpoints = [[0.5, 1.0, -0.5],
+        #                   [1.5, 1.0, -1.5],
+        #                   [1.5, 2.5, -1.5],
+        #                   [0.5, 2.5, -0.5],
+        #                   [0.5, 1.0, -1.5],
+        #                   ]
 
         # # diagonal setpoints 
         # self.setpoints = [[1.0, 0.0, -0.5],
@@ -51,13 +57,17 @@ class PosSetpointNode(Node):
         #                   [1.0, 0.0, -0.5],
         #                   ]
 
+        self.starting_point = [0.5, 1.0, -0.5]
+        self.object_point = [0.7, 3.3, -0.9]
+        self.goal_point = [1.3, 3.3, -0.9]
+
         self.waypoints = []
         self.current_waypoint = np.zeros(3)
         self.num_of_waypoints = 20
 
 
         self.current_position = np.zeros(3)
-        self.current_setpoint = self.setpoints[0]
+        self.current_setpoint = self.starting_point
         self.previous_setpoint = np.zeros(3)
         self.init_params()
         self.index = 0
@@ -112,40 +122,36 @@ class PosSetpointNode(Node):
 
     def timer_callback(self):
         if self.state == State.MOVE_TO_START:
-            self.index = 0
-            self.current_setpoint = self.setpoints[self.index]
-            self.previous_setpoint = self.setpoints[self.index]
-            now = self.get_clock().now()
-            self.publish_setpoint(setpoint=self.current_setpoint, now=now)
+            # self.index = 0
+            self.current_setpoint = self.starting_point
+            self.previous_setpoint = self.starting_point
+            self.publish_setpoint(setpoint=self.current_setpoint)
 
             error = self.current_setpoint - self.current_position
             self.publish_error(error)
             mean_squared_error = np.linalg.norm(error, ord=2)
 
             # set new setpoint if close to current setpoint
-            if mean_squared_error < self.epsilon_en_route:
+            if mean_squared_error < self.epsilon_goal:
                 self.get_logger().info(f"Reached startpoint: {self.current_setpoint}")
-                self.index += 1
+                # self.index += 1
                 self.state = State.INIT
-                return
 
         if self.state == State.INIT:
-            self.current_setpoint = self.setpoints[self.index]
+            self.current_setpoint = self.object_point
 
-            # self.create_square_path()
+            self.create_straight_path()
+            # self.create_circular_path()
 
-            self.create_circular_path()
-
-            now = self.get_clock().now()
             self.current_waypoint = self.waypoints[self.waypoint_index]
-            self.publish_setpoint(setpoint=self.current_waypoint, now=now)
-
+            self.publish_setpoint(setpoint=self.current_waypoint)
+            self.previous_state = State.INIT
             self.state = State.EN_ROUTE
+
 
         if self.state == State.EN_ROUTE:
             self.current_waypoint = self.waypoints[self.waypoint_index]
-            now = self.get_clock().now()
-            self.publish_setpoint(setpoint=self.current_waypoint, now=now)
+            self.publish_setpoint(setpoint=self.current_waypoint)
             error = self.current_waypoint - self.current_position
             self.publish_error(error)
             mean_squared_error = np.linalg.norm(error, ord=2)
@@ -154,25 +160,67 @@ class PosSetpointNode(Node):
                 if mean_squared_error < self.epsilon_goal:
                     self.get_logger().info(f"Setpoint reached: {self.current_setpoint}")
                     self.waypoint_index = 0
-                    self.index += 1
+                    # self.index += 1
                     self.previous_setpoint = self.current_setpoint
-                    self.state = State.INIT
-                    if self.index >= len(self.setpoints):
-                        self.get_logger().info("All setpoints reached")
-                        self.state = State.MOVE_TO_START
-                        return
+                    if self.previous_state == State.INIT:
+                        self.state = State.GRASP
+                    elif self.previous_state == State.TRANSPORT:
+                        self.state = State.LOWER
+                    # if self.index >= len(self.setpoints):
+                    #     self.get_logger().info("All setpoints reached")
+                    #     self.state = State.MOVE_TO_START
             else:
                 # set new setpoint if close to current setpoint
                 if mean_squared_error < self.epsilon_en_route:
                     self.waypoint_index += 1
                     self.get_logger().info(f"Waypoint reached: {self.current_waypoint}")
 
-    def create_square_path(self):
+        if self.state == State.GRASP:
+            # Dummy state
+            # publish grasp command
+            # receive grasp completed
+            self.state = State.LIFT
+
+        if self.state == State.LIFT:
+            self.current_setpoint += np.array([0,0,0.1])
+            self.publish_setpoint(setpoint=self.current_setpoint)
+            self.state = State.TRANSPORT
+
+        if self.state == State.TRANSPORT:
+            self.previous_setpoint = self.current_setpoint
+            self.current_setpoint = self.goal_point + np.array([0,0,0.1])
+            self.create_straight_path()
+            self.state = State.EN_ROUTE
+            self.previous_state = State.TRANSPORT
+
+        if self.state == State.LOWER:
+            self.current_setpoint += np.array([0,0,-0.1])
+            self.publish_setpoint(setpoint=list(self.current_setpoint))
+            self.state = State.DROP
+
+        if self.state == State.DROP:
+            # Dummy state
+            # publish drop command
+            # receive drop completed
+            self.state = State.MOVE_TO_START
+
+        # if self.state == State.DRIVE_LOOPS:
+        #     self.current_setpoint = self.setpoints[self.index]
+        #
+        #     self.create_straight_path()
+        #     # self.create_circular_path()
+        #
+        #     self.current_waypoint = self.waypoints[self.waypoint_index]
+        #     self.publish_setpoint(setpoint=self.current_waypoint)
+        #     self.previous_state = State.INIT
+        #     self.state = State.EN_ROUTE
+
+    def create_straight_path(self):
         """Creates equidistant points on a line between the current point 
         and the goal"""
         self.waypoints = np.linspace(self.previous_setpoint,
                                      self.current_setpoint,
-                                     num=self.num_of_waypoints + 1, endpoint=True)
+                                     num=self.num_of_waypoints, endpoint=True)
 
     def create_circular_path(self):
         """Creates equidistant points on a half circle between the current point 
