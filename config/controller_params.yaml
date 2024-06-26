@@ -8,4 +8,6 @@
       p: 0.5
       i: 0.3
       d: 0.005
-    epsilon: 0.05
+    epsilon:
+      en_route: 0.1
+      goal: 0.005

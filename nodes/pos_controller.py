@@ -70,7 +70,7 @@ class PosControlNode(Node):
                 ('gains_z.p', rclpy.parameter.Parameter.Type.DOUBLE),
                 ('gains_z.i', rclpy.parameter.Parameter.Type.DOUBLE),
                 ('gains_z.d', rclpy.parameter.Parameter.Type.DOUBLE),
-                ('epsilon', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('epsilon.goal', rclpy.parameter.Parameter.Type.DOUBLE),
             ],
         )
         param_xy = self.get_parameter('gains_xy.p')
@@ -91,9 +91,9 @@ class PosControlNode(Node):
         self.get_logger().info(f'{param_z.name}={param_z.value}')
         self.d_gain = param_xy.value
 
-        param = self.get_parameter('epsilon')
+        param = self.get_parameter('epsilon.goal')
         self.get_logger().info(f'{param.name}={param.value}')
-        self.epsilon = param.value
+        self.epsilon_goal = param.value
 
         self.add_on_set_parameters_callback(self.on_params_changed)
 
@@ -113,8 +113,8 @@ class PosControlNode(Node):
                 self.i_gain = param.value
             elif param.name == 'gains_z.d':
                 self.d_gain = param.value
-            elif param.name == 'epsilon':
-                self.epsilon = param.value
+            elif param.name == 'epsilon.goal':
+                self.epsilon_goal = param.value
             else:
                 continue
         return SetParametersResult(successful=True, reason='Parameter set')
@@ -176,7 +176,7 @@ class PosControlNode(Node):
                                          [0,0,1]])
         error = error @ rotation_world_robot
 
-        if (np.abs(error).mean() < self.epsilon):
+        if (np.abs(error).mean() < self.epsilon_goal):
             self.error_integrated = np.zeros(3)
 
         error_dt = (error - self.error_previous)/dt

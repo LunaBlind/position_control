@@ -63,11 +63,6 @@ class PosSetpointNode(Node):
         self.index = 0
         self.waypoint_index = 0
 
-        # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-        #                                           topic='position_estimate',
-        #                                           callback=self.set_current_position,
-        #                                           qos_profile=1)
-
         self.pos_sub = self.create_subscription(msg_type=PoseStamped,
                                                   topic='ground_truth/pose',
                                                   callback=self.set_current_position,
@@ -89,12 +84,17 @@ class PosSetpointNode(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ('epsilon', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('epsilon.en_route', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('epsilon.goal', rclpy.parameter.Parameter.Type.DOUBLE),
             ],
         )
-        param = self.get_parameter('epsilon')
+        param = self.get_parameter('epsilon.en_route')
         self.get_logger().info(f'{param.name}={param.value}')
-        self.epsilon = param.value
+        self.epsilon_en_route = param.value
+
+        param = self.get_parameter('epsilon.goal')
+        self.get_logger().info(f'{param.name}={param.value}')
+        self.epsilon_goal = param.value
 
         self.add_on_set_parameters_callback(self.on_params_changed)
 
@@ -102,8 +102,10 @@ class PosSetpointNode(Node):
         param: rclpy.parameter.Parameter
         for param in params:
             self.get_logger().info(f'Try to set [{param.name}] = {param.value}')
-            if param.name == 'epsilon':
-                self.epsilon = param.value
+            if param.name == 'epsilon.en_route':
+                self.epsilon_en_route = param.value
+            if param.name == 'epsilon.goal':
+                self.epsilon_goal = param.value
             else:
                 continue
         return SetParametersResult(successful=True, reason='Parameter set')
@@ -121,7 +123,7 @@ class PosSetpointNode(Node):
             mean_squared_error = np.linalg.norm(error, ord=2)
 
             # set new setpoint if close to current setpoint
-            if mean_squared_error < self.epsilon:
+            if mean_squared_error < self.epsilon_en_route:
                 self.get_logger().info(f"Reached startpoint: {self.current_setpoint}")
                 self.index += 1
                 self.state = State.INIT
@@ -148,11 +150,8 @@ class PosSetpointNode(Node):
             self.publish_error(error)
             mean_squared_error = np.linalg.norm(error, ord=2)
 
-            # set new setpoint if close to current setpoint
-            if mean_squared_error < self.epsilon:
-                self.waypoint_index += 1
-                self.get_logger().info(f"Waypoint reached: {self.current_waypoint}")
-                if self.waypoint_index >= len(self.waypoints):
+            if self.waypoint_index == len(self.waypoints) - 1:
+                if mean_squared_error < self.epsilon_goal:
                     self.get_logger().info(f"Setpoint reached: {self.current_setpoint}")
                     self.waypoint_index = 0
                     self.index += 1
@@ -162,6 +161,11 @@ class PosSetpointNode(Node):
                         self.get_logger().info("All setpoints reached")
                         self.state = State.MOVE_TO_START
                         return
+            else:
+                # set new setpoint if close to current setpoint
+                if mean_squared_error < self.epsilon_en_route:
+                    self.waypoint_index += 1
+                    self.get_logger().info(f"Waypoint reached: {self.current_waypoint}")
 
     def create_square_path(self):
         """Creates equidistant points on a line between the current point 
