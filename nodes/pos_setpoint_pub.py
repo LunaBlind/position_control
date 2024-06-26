@@ -6,6 +6,10 @@ You can change this code to try out other setpoint functions, e.g. a sin wave.
 """
 import rclpy
 from geometry_msgs.msg import PoseStamped, PointStamped
+from rcl_interfaces.msg import SetParametersResult
+
+
+from hippo_msgs.msg import DepthStamped
 from rclpy.node import Node
 
 import rclpy.parameter
@@ -74,9 +78,15 @@ class PosSetpointNode(Node):
         self.waypoint_index = 0
 
         self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-                                                  topic='ground_truth/pose',
+                                                  topic='position_estimate',
                                                   callback=self.set_current_position,
                                                   qos_profile=1)
+
+
+        # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
+        #                                           topic='ground_truth/pose',
+        #                                           callback=self.set_current_position,
+        #                                           qos_profile=1)
 
         self.pos_setpoint_pub = self.create_publisher(msg_type=PointStamped,
                                                         topic='pos_setpoint',
@@ -85,6 +95,10 @@ class PosSetpointNode(Node):
         self.pos_error_pub = self.create_publisher(msg_type=PointStamped,
                                                         topic='pos_error',
                                                         qos_profile=1)
+
+        self.euclidian_pos_error_pub = self.create_publisher(msg_type=DepthStamped,
+                                                  topic='euclidian_pos_error',
+                                                  qos_profile=1)
 
         self.timer = self.create_timer(timer_period_sec=1/10 ,
                                        callback=self.timer_callback)
@@ -245,7 +259,7 @@ class PosSetpointNode(Node):
                                          current_robot_pos.y,
                                          current_robot_pos.z])
 
-    def publish_setpoint(self, setpoint: list, now: rclpy.time.Time) -> None:
+    def publish_setpoint(self, setpoint: list) -> None:
         msg = PointStamped()
         msg.point.x = setpoint[0]
         msg.point.y = setpoint[1]
@@ -260,6 +274,11 @@ class PosSetpointNode(Node):
         msg.point.z = error[2]
         msg.header.stamp = self.get_clock().now().to_msg()
         self.pos_error_pub.publish(msg)
+
+        euclidian_err_msg = DepthStamped()
+        euclidian_err_msg.depth = np.linalg.norm(error, ord=2)
+        euclidian_err_msg.header.stamp = msg.header.stamp
+        self.euclidian_pos_error_pub.publish(euclidian_err_msg)
 
 
 def main():
