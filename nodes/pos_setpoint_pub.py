@@ -59,7 +59,7 @@ class PosSetpointNode(Node):
         self.current_position = np.zeros(3)
         self.current_setpoint = self.setpoints[0]
         self.previous_setpoint = np.zeros(3)
-        self.epsilon = 0.01
+        self.init_params()
         self.index = 0
         self.waypoint_index = 0
 
@@ -83,6 +83,30 @@ class PosSetpointNode(Node):
 
         self.timer = self.create_timer(timer_period_sec=1/10 ,
                                        callback=self.timer_callback)
+
+
+    def init_params(self):
+        self.declare_parameters(
+            namespace='',
+            parameters=[
+                ('epsilon', rclpy.parameter.Parameter.Type.DOUBLE),
+            ],
+        )
+        param = self.get_parameter('epsilon')
+        self.get_logger().info(f'{param.name}={param.value}')
+        self.epsilon = param.value
+
+        self.add_on_set_parameters_callback(self.on_params_changed)
+
+    def on_params_changed(self, params ):
+        param: rclpy.parameter.Parameter
+        for param in params:
+            self.get_logger().info(f'Try to set [{param.name}] = {param.value}')
+            if param.name == 'epsilon':
+                self.epsilon = param.value
+            else:
+                continue
+        return SetParametersResult(successful=True, reason='Parameter set')
 
     def timer_callback(self):
         if self.state == State.MOVE_TO_START:

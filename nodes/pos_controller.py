@@ -27,7 +27,6 @@ class PosControlNode(Node):
 
         self.t_previous = self.get_clock().now()
 
-        self.epsilon = 0.005
         self.error_previous = np.zeros(3)
         self.error_dt_previous = np.zeros(3)
         self.error_integrated = np.zeros(3)
@@ -71,6 +70,7 @@ class PosControlNode(Node):
                 ('gains_z.p', rclpy.parameter.Parameter.Type.DOUBLE),
                 ('gains_z.i', rclpy.parameter.Parameter.Type.DOUBLE),
                 ('gains_z.d', rclpy.parameter.Parameter.Type.DOUBLE),
+                ('epsilon', rclpy.parameter.Parameter.Type.DOUBLE),
             ],
         )
         param_xy = self.get_parameter('gains_xy.p')
@@ -91,6 +91,10 @@ class PosControlNode(Node):
         self.get_logger().info(f'{param_z.name}={param_z.value}')
         self.d_gain = param_xy.value
 
+        param = self.get_parameter('epsilon')
+        self.get_logger().info(f'{param.name}={param.value}')
+        self.epsilon = param.value
+
         self.add_on_set_parameters_callback(self.on_params_changed)
 
     def on_params_changed(self, params ):
@@ -109,6 +113,8 @@ class PosControlNode(Node):
                 self.i_gain = param.value
             elif param.name == 'gains_z.d':
                 self.d_gain = param.value
+            elif param.name == 'epsilon':
+                self.epsilon = param.value
             else:
                 continue
         return SetParametersResult(successful=True, reason='Parameter set')
