@@ -8,6 +8,7 @@ install(PROGRAMS
   nodes/kalman_filter.py
   nodes/ranges_debugger.py
   nodes/yaw_controller.py
+  nodes/grasp.py
   nodes/pos_controller.py
   nodes/pos_setpoint_pub.py
   DESTINATION lib/${PROJECT_NAME}

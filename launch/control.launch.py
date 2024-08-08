@@ -26,6 +26,7 @@ def generate_launch_description() -> LaunchDescription:
     group = GroupAction([
         PushRosNamespace(LaunchConfiguration('vehicle_name')),
         Node(executable='yaw_controller.py', package='position_control'),
+        Node(executable='grasp.py', package='position_control'),
         Node(executable='pos_setpoint_pub.py', package='position_control',
              parameters=[
                  LaunchConfiguration('controller_config_file'),
@@ -36,6 +37,12 @@ def generate_launch_description() -> LaunchDescription:
                  LaunchConfiguration('controller_config_file'),
                  ]),
     ])
+
+    gripper_launchfile_path = str(package_path / 'launch/gripper.launch.py')
+    gripper_launch = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([gripper_launchfile_path])
+            )
+    launch_description.add_action(gripper_launch)
     
     launch_description.add_action(group)
     return launch_description
