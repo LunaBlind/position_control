@@ -20,7 +20,9 @@ class YawController(Node):
                          depth=1)
 
         # default value for the yaw setpoint
-        self.setpoint = math.pi / 2.0
+        self.setpoint_yaw = math.pi / 2.0
+        self.setpoint_pitch = 0
+        self.setpoint_roll = 0
 
         self.vision_pose_sub = self.create_subscription(
             msg_type=PoseWithCovarianceStamped,
@@ -53,27 +55,38 @@ class YawController(Node):
         # convert the quaternion to euler angles
         (roll, pitch, yaw) = euler_from_quaternion([q.x, q.y, q.z, q.w])
         yaw = self.wrap_pi(yaw)
+        pitch = self.wrap_pi(pitch)
+        roll = self.wrap_pi(roll)
 
-        control_output = self.compute_control_output(yaw)
+        control_output = self.compute_control_output(yaw, pitch, roll)
         timestamp = rclpy.time.Time.from_msg(msg.header.stamp)
         self.publish_control_output(control_output, timestamp)
 
-    def compute_control_output(self, yaw):
+    def compute_control_output(self, yaw, pitch, roll):
         # very important: normalize the angle error!
-        error = self.wrap_pi(self.setpoint - yaw)
+        error_yaw = self.wrap_pi(self.setpoint_yaw - yaw)
+        error_pitch = self.wrap_pi(self.setpoint_pitch - pitch)
+        error_roll = self.wrap_pi(self.setpoint_roll - roll)
 
-        p_gain = 0.1  # turned out to be a good value
-        return p_gain * error
+        p_gain_yaw = 0.25  # turned out to be a good value
+        p_gain_pitch = 0.2  # turned out to be a good value
+        p_gain_roll = 0.2  # turned out to be a good value
+        control_output = [p_gain_pitch * error_pitch - 0.35,
+                          p_gain_yaw * error_yaw,
+                          p_gain_roll * error_roll + 0.025]
+        return control_output
 
-    def publish_control_output(self, control_output: float,
+    def publish_control_output(self, control_output: list,
                                timestamp: rclpy.time.Time):
         msg = ActuatorSetpoint()
         msg.header.stamp = timestamp.to_msg()
-        msg.ignore_x = True
-        msg.ignore_y = True
+        msg.ignore_x = False
+        msg.ignore_y = False  # pitch is rotation around y
         msg.ignore_z = False  # yaw is the rotation around the vehicle's z axis
 
-        msg.z = control_output
+        msg.y = control_output[0]
+        msg.z = control_output[1]
+        msg.x = control_output[2]
         self.torque_pub.publish(msg)
 
 

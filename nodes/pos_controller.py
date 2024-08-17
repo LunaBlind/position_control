@@ -189,13 +189,14 @@ class PosControlNode(Node):
 
         # limit output to physical limits of the robot (or as in the final project to half of that)
         lower_limit, upper_limit = self.output_limits
-        np.clip(thrust, lower_limit, upper_limit)
+        thrust = np.clip(thrust, lower_limit, upper_limit)
 
         self.t_previous = t_now
         self.error_previous = error
         self.error_dt_previous = error_dt
 
-        thrust[2] += -0.045
+        thrust[2] += -0.01
+        # thrust[2] += -0.045
 
         return thrust
 

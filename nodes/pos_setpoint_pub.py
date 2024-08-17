@@ -63,8 +63,8 @@ class PosSetpointNode(Node):
         #                   [1.0, 0.0, -0.5],
         #                   ]
 
-        # self.distance_gripper_robot = np.array([0.0, 0.34, 0.0])
-        self.distance_gripper_robot = np.array([0.0, 0.24, 0.0])
+        self.distance_gripper_robot = np.array([-0.0375, 0.45, 0.05])
+        # self.distance_gripper_robot = np.array([0.0, 0.24, 0.0])
 
         self.starting_point = np.array([0.5, 1.0, -0.5]) 
         # self.object_point = np.array([0.6, 3.60, -0.825]) - self.distance_gripper_robot
