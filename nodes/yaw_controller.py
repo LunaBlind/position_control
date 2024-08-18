@@ -4,6 +4,7 @@ import math
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from hippo_msgs.msg import ActuatorSetpoint, Float64Stamped
+from std_msgs.msg import  Bool
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from tf_transformations import euler_from_quaternion
@@ -24,6 +25,14 @@ class YawController(Node):
         self.setpoint_pitch = 0
         self.setpoint_roll = 0
 
+        self.p_gain_yaw = 0.25  # turned out to be a good value
+        self.p_gain_pitch = 0.2  # turned out to be a good value
+        self.p_gain_roll = 0.2  # turned out to be a good value
+
+        self.yaw_offset = 0
+        self.pitch_offset = -0.35
+        self.roll_offset = 0.025
+
         self.vision_pose_sub = self.create_subscription(
             msg_type=PoseWithCovarianceStamped,
             topic='vision_pose_cov',
@@ -34,9 +43,22 @@ class YawController(Node):
                                                      callback=self.on_setpoint,
                                                      qos_profile=qos)
 
+        self.object_grabbed_sub = self.create_subscription(msg_type=Bool,
+                                                  topic='object_grabbed',
+                                                  callback=self.adjust_offsets,
+                                                  qos_profile=1)
+
         self.torque_pub = self.create_publisher(msg_type=ActuatorSetpoint,
                                                 topic='torque_setpoint',
                                                 qos_profile=1)
+
+    def adjust_offsets(self, msg):
+        if msg.data == True:
+            # weight of object 125g -> ~7g -0.01 offset
+            self.pitch_offset = -0.52
+
+        else:
+            self.pitch_offset = -0.35
 
     def wrap_pi(self, value: float):
         """Normalize the angle to the range [-pi; pi]."""
@@ -68,12 +90,9 @@ class YawController(Node):
         error_pitch = self.wrap_pi(self.setpoint_pitch - pitch)
         error_roll = self.wrap_pi(self.setpoint_roll - roll)
 
-        p_gain_yaw = 0.25  # turned out to be a good value
-        p_gain_pitch = 0.2  # turned out to be a good value
-        p_gain_roll = 0.2  # turned out to be a good value
-        control_output = [p_gain_pitch * error_pitch - 0.35,
-                          p_gain_yaw * error_yaw,
-                          p_gain_roll * error_roll + 0.025]
+        control_output = [self.p_gain_pitch * error_pitch + self.pitch_offset,
+                          self.p_gain_yaw * error_yaw,
+                          self.p_gain_roll * error_roll + self.roll_offset]
         return control_output
 
     def publish_control_output(self, control_output: list,

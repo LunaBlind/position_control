@@ -110,6 +110,10 @@ class PosSetpointNode(Node):
                                                   topic='grasp_command',
                                                   qos_profile=1)
 
+        self.object_grabbed_pub = self.create_publisher(msg_type=Bool,
+                                                  topic='object_grabbed',
+                                                  qos_profile=1)
+
         self.timer = self.create_timer(timer_period_sec=1/10 ,
                                        callback=self.timer_callback)
 
@@ -224,13 +228,16 @@ class PosSetpointNode(Node):
             grasp_msg = Bool()
             grasp_msg.data = True
             self.grip_command_pub.publish(grasp_msg)
-            self.get_logger().info(f'Grasping')
-            time.sleep(10)
+            time.sleep(3)
+
+            object_grabbed_msg = Bool()
+            object_grabbed_msg.data = True
+            self.object_grabbed_pub.publish(object_grabbed_msg)
             # receive grasp completed
             self.state = State.LIFT
 
         if self.state == State.LIFT:
-            self.current_setpoint += np.array([0,0,0.1])
+            self.current_setpoint += np.array([0,0,0.05])
             self.publish_setpoint(setpoint=self.current_setpoint)
             self.get_logger().info(f'{self.state}')
             time.sleep(10)
@@ -260,6 +267,11 @@ class PosSetpointNode(Node):
             self.grip_command_pub.publish(grasp_msg)
             # receive drop completed
             self.get_logger().info(f'{self.state}')
+
+            object_grabbed_msg = Bool()
+            object_grabbed_msg.data = False
+            self.object_grabbed_pub.publish(object_grabbed_msg)
+
             self.state = State.MOVE_TO_START
 
         # if self.state == State.DRIVE_LOOPS:
@@ -305,7 +317,8 @@ class PosSetpointNode(Node):
 
         angle = np.arctan2(distance[1], distance[0])
         # TODO look into why it needs to be the wrong way around
-        thetas = np.linspace(np.pi, 0, num=self.num_of_waypoints + 1, endpoint=True) 
+        phis = np.linspace(np.pi, 0, num=self.num_of_waypoints + 1, endpoint=True) 
+        thetas = np.linspace(np.pi/2, 0, num=self.num_of_waypoints + 1, endpoint=True) 
         waypoints = []
 
         for theta in thetas:

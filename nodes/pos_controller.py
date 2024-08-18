@@ -8,6 +8,7 @@ import rclpy
 import numpy as np
 from hippo_msgs.msg import ActuatorSetpoint
 from geometry_msgs.msg import PoseStamped, PointStamped
+from std_msgs.msg import  Bool
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
 from tf_transformations import euler_from_quaternion
@@ -34,6 +35,7 @@ class PosControlNode(Node):
         # Same limits as in the final project controller 
         self.output_limits = np.array([-0.5,0.5])
 
+        self.z_offset = -0.01
 
         self.thrust_pub = self.create_publisher(msg_type=ActuatorSetpoint,
                                                 topic='thrust_setpoint',
@@ -53,6 +55,16 @@ class PosControlNode(Node):
                                                   topic='position_estimate',
                                                   callback=self.on_depth,
                                                   qos_profile=1)
+
+        self.object_grabbed_sub = self.create_subscription(msg_type=Bool,
+                                                  topic='object_grabbed',
+                                                  callback=self.adjust_offsets,
+                                                  qos_profile=1)
+
+        # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
+        #                                            topic='position_estimate',
+        #                                            callback=self.on_depth,
+        #                                            qos_profile=1)
 
         # might be interesting to compare that to the EKF value 
         # self.depth_sub = self.create_subscription(msg_type=DepthStamped,
@@ -119,6 +131,12 @@ class PosControlNode(Node):
                 continue
         return SetParametersResult(successful=True, reason='Parameter set')
 
+    def adjust_offsets(self, msg):
+        if msg.data == True:
+            # weight of object changed 125g -> ~30g +0.01 offset
+            self.z_offset = 0.03
+        else:
+            self.z_offset = -0.01
 
     def on_setpoint(self, setpoint_msg: PointStamped):
         # We received a new setpoint! Let's save it, so that we can use it as
@@ -195,7 +213,7 @@ class PosControlNode(Node):
         self.error_previous = error
         self.error_dt_previous = error_dt
 
-        thrust[2] += -0.01
+        thrust[2] += self.z_offset
         # thrust[2] += -0.045
 
         return thrust
