@@ -110,10 +110,6 @@ class PosSetpointNode(Node):
                                                   topic='grasp_command',
                                                   qos_profile=1)
 
-        self.object_grabbed_pub = self.create_publisher(msg_type=Bool,
-                                                  topic='object_grabbed',
-                                                  qos_profile=1)
-
         self.timer = self.create_timer(timer_period_sec=1/10 ,
                                        callback=self.timer_callback)
 
@@ -230,10 +226,6 @@ class PosSetpointNode(Node):
             self.grip_command_pub.publish(grasp_msg)
             time.sleep(3)
 
-            object_grabbed_msg = Bool()
-            object_grabbed_msg.data = True
-            self.object_grabbed_pub.publish(object_grabbed_msg)
-            # receive grasp completed
             self.state = State.LIFT
 
         if self.state == State.LIFT:
@@ -267,10 +259,6 @@ class PosSetpointNode(Node):
             self.grip_command_pub.publish(grasp_msg)
             # receive drop completed
             self.get_logger().info(f'{self.state}')
-
-            object_grabbed_msg = Bool()
-            object_grabbed_msg.data = False
-            self.object_grabbed_pub.publish(object_grabbed_msg)
 
             self.state = State.MOVE_TO_START
 
