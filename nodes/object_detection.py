@@ -2,12 +2,18 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
+import rclpy.time
 from apriltag_msgs.msg import AprilTagDetectionArray
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import Bool
+from geometry_msgs.msg import PoseStamped, Pose
 
 import numpy as np
 import cv2
+
+import tf_transformations
+import tf2_geometry_msgs
+from tf2_ros import TransformListener, Buffer
 
 class AprilTagPoseSubscriber(Node):
     def __init__(self):
@@ -25,6 +31,14 @@ class AprilTagPoseSubscriber(Node):
         self.object_grabbed_pub = self.create_publisher(msg_type=Bool,
                                                   topic='object_grabbed',
                                                   qos_profile=1)
+
+        self.object_pose_pub = self.create_publisher(msg_type=PoseStamped,
+                                                  topic='object_pose',
+                                                  qos_profile=1)
+
+        # Initialize the tf2 buffer and listener
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         # self.camera_matrix = np.array([
         #      [467.74270306499267, 0.0, 320.0],
         #      [0.0, 467.74270306499267, 240.0],
@@ -37,7 +51,7 @@ class AprilTagPoseSubscriber(Node):
         #                          [-0.17625282,  0.00184893, -0.98434319, 0.1],
         #                          [0.98430786,  0.00900941, -0.17622957, 0.375],
         #                          [0, 0, 0, 1]])
-        self.gripper_threshold = 0.15
+        self.gripper_threshold = 0.25
         self.gripper_state = 'closed'
         self.unknown_state_start_time = None
 
@@ -59,7 +73,7 @@ class AprilTagPoseSubscriber(Node):
 # Neutral/default distortion coefficients (zero distortion)
         self.dist_coeffs = np.zeros(5, dtype=np.float32)  # or np.zeros(8, dtype=np.float32) depending on the model
 
-        tag_size = 0.03  # in meters
+        tag_size = 0.04  # in meters
 
 # 3D points in the world (tag corners, counterclockwise from top-left)
         self.object_points = np.array([
@@ -99,45 +113,45 @@ class AprilTagPoseSubscriber(Node):
                 success, rvec, tvec = cv2.solvePnP(
                         self.object_points, image_points,
                         self.camera_matrix, self.dist_coeffs)
+                # self.get_logger().info(f"Rotation Vector: {rvec}")
                 rvec, _ = cv2.Rodrigues(rvec)
+                T_current = np.eye(4)
+                T_current[:3, :3] = rvec
+                T_current[:3, 3] = tvec.squeeze()
 
-                if success and detection.id == 101:
+                if success == True:
+                    if detection.id == 100:
+                        # self.get_logger().info(f"Transformation matrix: {T_current}")
+                        self.transform_matrix_to_pose(T_current)
+
                     # rvec is the rotation vector, tvec is the translation vector
                     # self.get_logger().info(f"Rotation Vector: {rvec}")
                     # self.get_logger().info(f"Translation Vector: {tvec}")
-                    T_current = np.eye(4)
-                    T_current[:3, :3] = rvec
-                    T_current[:3, 3] = tvec.squeeze()
                     # self.get_logger().info(f"Tag ID: {detection.id}")
                     # self.get_logger().info(f"Rotation Vector: {rvec}")
-                    difference_open = np.linalg.norm(T_current - self.T_open, 'fro')
-                    difference_closed = np.linalg.norm(T_current - self.T_closed, 'fro')
+                    if detection.id == 101:
+                        difference_open = np.linalg.norm(T_current - self.T_open, 'fro')
+                        difference_closed = np.linalg.norm(T_current - self.T_closed, 'fro')
 
-                    if difference_open < self.gripper_threshold:
-                        new_state = 'open'
-                    elif difference_closed < self.gripper_threshold:
-                        new_state = 'closed'
-                    else:
-                        new_state = 'unknown'
-                    self.update_state(new_state, msg.header.stamp.sec)
-                    grab_msg = Bool
-                    if self.gripper_state == 'holding':
-                        grab_msg = True
-                    else:
-                        grab_msg = False
-                    self.object_grabbed_pub.publish(grab_msg)
+                        if difference_open < self.gripper_threshold:
+                            new_state = 'open'
+                        elif difference_closed < self.gripper_threshold:
+                            new_state = 'closed'
+                        else:
+                            new_state = 'unknown'
+                        self.update_state(new_state, msg.header.stamp.sec)
+                        grab_msg = Bool()
+                        if self.gripper_state == 'holding':
+                            grab_msg.data = True
+                        else:
+                            grab_msg.data = False
+                        self.object_grabbed_pub.publish(grab_msg)
                     # self.get_logger().info(f"Translation Vector: {tvec}")
-                    # self.get_logger().info(f"Transformation matrix: {T_current}")
                     # self.get_logger().info(f"New state: {new_state}")
                     # self.get_logger().info(f"Gripper state: {self.gripper_state}")
                     # self.get_logger().info(f"Gripper state: {msg.header.stamp.sec}")
 
     def update_state(self, new_state, current_timestamp: Time):
-        # Get the current ROS2 time
-        # current_time = self.get_clock().now()
-        # self.get_logger().info(f"Current time: {current_time}")
-        # self.get_logger().info(f"time_stamp: {header_stamp}")
-
         if new_state == 'unknown' and self.gripper_state != 'holding':
             if self.gripper_state != 'unknown':
                 self.unknown_state_start_time = current_timestamp
@@ -152,6 +166,51 @@ class AprilTagPoseSubscriber(Node):
             if self.gripper_state == 'holding':
                 if new_state == 'open' or new_state == 'closed':
                     self.gripper_state = new_state
+
+    def transform_matrix_to_pose(self, transformation_matrix):
+        # Extract the translation (x, y, z) from the transformation matrix
+        translation = tf_transformations.translation_from_matrix(transformation_matrix)
+        x, y, z = translation
+
+        # Extract the rotation (quaternion) from the transformation matrix
+        quaternion = tf_transformations.quaternion_from_matrix(transformation_matrix)
+        qx, qy, qz, qw = quaternion
+
+        # Create a Pose message
+        pose = Pose()
+        pose.position.x = x
+        pose.position.y = y
+        pose.position.z = z
+        pose.orientation.x = qx
+        pose.orientation.y = qy
+        pose.orientation.z = qz
+        pose.orientation.w = qw
+
+        # Get the current time
+        now = rclpy.time.Time()
+
+        # Transform the pose from the tag frame to the world frame
+        transform = self.tf_buffer.lookup_transform('map',  # Target frame
+                                                    # msg.header.frame_id,  # Source frame
+                                                    'bluerov00/front_camera',  # Source frame
+                                                    # 'front_camera_link',  # Source frame
+                                                    now)  # Time
+
+        # Apply the transform to get the pose in the world frame
+        pose_world = tf2_geometry_msgs.do_transform_pose(pose, transform)
+
+        # Now you have the pose in the world frame
+        self.get_logger().info(f"Tag Pose in World Frame: {pose_world.position}")
+        pose_msg = PoseStamped()
+        pose_msg.pose = pose_world
+
+            # Set the header
+        pose_msg.header.stamp = now.to_msg()  # Current time
+        pose_msg.header.frame_id = "map"  # Reference frame
+        # pose_msg.header.stamp = now
+        self.object_pose_pub.publish(pose_msg)
+
+        # return pose
 
 def main():
     rclpy.init()
