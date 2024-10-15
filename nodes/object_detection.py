@@ -56,32 +56,27 @@ class AprilTagPoseSubscriber(Node):
         self.unknown_state_start_time = None
 
         self.unknown_start_time = None
-        self.unknown_threshold = 1
-        self.T_open = np.array([
-                                [-0.00283829, -0.70956404, -0.70463524, 0.0015],
-                                [-0.98288965, -0.12779666,  0.13264968, 0.08],
-                                [-0.18417348,  0.69295519, -0.69706043, 0.355],
-                                 [0, 0, 0, 1]])
-        self.T_closed = np.array([
-                                [0.00456548, -0.99984658,  0.0169108, -0.05],
-                                [-0.98564349, -0.0016451,   0.16883186, 0.07],
-                                [-0.16877813, -0.01743882, -0.98549979, 0.4],
-                                [0, 0, 0, 1],
-                                ])
+        self.unknown_threshold = 4
 
+        # Define hardcoded open and closed gripper poses found in rviz2
+        gripper_open_position = np.array([-0.018, 0.097, 0.356])
+        gripper_open_orientation = np.array([-0.59, -0.255, -0.296, 0.7])
+        self.T_open = np.eye(4)
+        # Convert quaternion to rotation matrix
+        rotation_matrix = tf_transformations.quaternion_matrix(gripper_open_orientation)[:3, :3]  # 3x3 rotation matrix
+        self.T_open[:3, :3] = rotation_matrix
+        self.T_open[:3, 3] = gripper_open_position.squeeze()
 
-# Neutral/default distortion coefficients (zero distortion)
-        self.dist_coeffs = np.zeros(5, dtype=np.float32)  # or np.zeros(8, dtype=np.float32) depending on the model
+        gripper_closed_position = np.array([-0.0457, 0.0985, 0.379])
+        gripper_closed_orientation = np.array([-0.454, -0.444, -0.546, 0.545])
+        self.T_closed = np.eye(4)
+        # Convert quaternion to rotation matrix
+        rotation_matrix = tf_transformations.quaternion_matrix(gripper_closed_orientation)[:3, :3]  # 3x3 rotation matrix
+        self.T_closed[:3, :3] = rotation_matrix
+        self.T_closed[:3, 3] = gripper_closed_position.squeeze()
 
-        tag_size = 0.04  # in meters
-
-# 3D points in the world (tag corners, counterclockwise from top-left)
-        self.object_points = np.array([
-            [-tag_size / 2, -tag_size / 2, 0],
-            [ tag_size / 2, -tag_size / 2, 0],
-            [ tag_size / 2,  tag_size / 2, 0],
-            [-tag_size / 2,  tag_size / 2, 0]
-        ], dtype=np.float32)
+        # Neutral/default distortion coefficients (zero distortion)
+        self.dist_coeffs = None  # or np.zeros(8, dtype=np.float32) depending on the model
 
     def set_camera_matrices(self, camera_info):
         self.camera_matrix = np.array(camera_info.k).reshape(3,3)
@@ -120,6 +115,15 @@ class AprilTagPoseSubscriber(Node):
                         flags=cv2.SOLVEPNP_IPPE_SQUARE)
 
                 if success == True:
+                    rotation_matrix, _ = cv2.Rodrigues(rvec)
+                    # quaternion = tf_transformations.quaternion_from_matrix(np.hstack((rotation_matrix, tvec.reshape(3, 1))))
+                    
+                    # self.get_logger().info(f"Quaternion: {quaternion}")
+                    # current_gripper_pose = self.create_pose_msg(tvec, quaternion)
+                    T_current = np.eye(4)
+                    T_current[:3, :3] = rotation_matrix
+                    T_current[:3, 3] = tvec.squeeze()
+
                     if detection.id == 100:
                         # self.get_logger().info(f"Transformation matrix: {T_current}")
                         self.transform_matrix_to_pose(T_current)
