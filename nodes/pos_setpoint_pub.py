@@ -43,33 +43,14 @@ class PosSetpointNode(Node):
         self.state = State.MOVE_TO_START
         self.previous_state = State.MOVE_TO_START
 
-        # change these parameters to adjust the setpoints
-        # ... or change implementation details below to achieve other setpoint
-        # functions.
-
-        # # square setpoints 
-        # self.setpoints = [[0.5, 1.0, -0.5],
-        #                   [1.5, 1.0, -1.5],
-        #                   [1.5, 2.5, -1.5],
-        #                   [0.5, 2.5, -0.5],
-        #                   [0.5, 1.0, -1.5],
-        #                   ]
-
-        # # diagonal setpoints 
-        # self.setpoints = [[1.0, 0.0, -0.5],
-        #                   [2.0, 1.0, -0.5],
-        #                   [1.0, 2.0, -0.5],
-        #                   [0.0, 1.0, -0.5],
-        #                   [1.0, 0.0, -0.5],
-        #                   ]
-
-        self.distance_gripper_robot = np.array([-0.0375, 0.45, 0.05])
+        # self.distance_gripper_robot = np.array([-0.0375, 0.52, 0.05])
+        self.distance_gripper_robot = np.array([-0.08, 0.58, 0.06])
+        # self.distance_gripper_robot = np.array([0.42, 0.06, -0.06])
         # self.distance_gripper_robot = np.array([0.0, 0.24, 0.0])
 
         self.starting_point = np.array([0.79, 3.0, -0.85]) 
         self.object_point = np.array([0,0,0])
         self.object_apriltag_offset = np.array([0.025, 0, 0.04])
-        # self.goal_point = np.array([1.4, 3.60, -0.825]) - self.distance_gripper_robot
         self.holding_object = False
 
 
@@ -78,23 +59,28 @@ class PosSetpointNode(Node):
         self.num_of_waypoints = 20
 
 
-        self.current_position = np.zeros(3)
+        self.current_position = np.array([1.3, 1.0, -0.5]) # start position of the bluerov in sim
         self.current_setpoint = self.starting_point
         self.previous_setpoint = np.zeros(3)
         self.init_params()
         self.index = 0
         self.waypoint_index = 0
 
+        # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
+        #                                           topic='position_estimate',
+        #                                           callback=self.set_current_position,
+        #                                           qos_profile=1)
+
+
         self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-                                                  topic='position_estimate',
+                                                  topic='ground_truth/pose',
                                                   callback=self.set_current_position,
                                                   qos_profile=1)
 
-
-        # self.pos_sub = self.create_subscription(msg_type=PoseStamped,
-        #                                           topic='ground_truth/pose',
-        #                                           callback=self.set_current_position,
-        #                                           qos_profile=1)
+        self.obj_pos_sub = self.create_subscription(msg_type=PoseStamped,
+                                                  topic='object_pose',
+                                                  callback=self.set_object_position,
+                                                  qos_profile=1)
 
         self.pos_setpoint_pub = self.create_publisher(msg_type=PointStamped,
                                                         topic='pos_setpoint',
@@ -160,26 +146,21 @@ class PosSetpointNode(Node):
 
     def timer_callback(self):
         if self.state == State.MOVE_TO_START:
-            # self.index = 0
             self.current_setpoint = self.starting_point
-            self.previous_setpoint = self.starting_point
-            self.publish_setpoint(setpoint=self.current_setpoint)
+            self.previous_setpoint = self.current_position
+            self.create_straight_path()
 
-            error = self.current_setpoint - self.current_position
-            self.publish_error(error)
-            mean_squared_error = np.linalg.norm(error, ord=2)
-
-            # set new setpoint if close to current setpoint
-            if mean_squared_error < self.epsilon_goal:
-                self.get_logger().info(f"Reached startpoint: {self.current_setpoint}")
-                # self.index += 1
-                self.state = State.INIT
+            self.current_waypoint = self.waypoints[self.waypoint_index]
+            self.publish_setpoint(setpoint=self.current_waypoint)
+            self.previous_state = State.MOVE_TO_START
+            self.state = State.EN_ROUTE
 
         if self.state == State.INIT:
+            time.sleep(5)
             self.current_setpoint = self.object_point
+            self.get_logger().info(f"Object point: {self.object_point}")
 
             self.create_straight_path()
-            # self.create_circular_path()
             grasp_msg = Bool()
             grasp_msg.data = False
             self.grip_command_pub.publish(grasp_msg)
@@ -199,9 +180,7 @@ class PosSetpointNode(Node):
 
             if self.waypoint_index == len(self.waypoints) - 1:
                 if mean_squared_error < self.epsilon_goal:
-                    self.get_logger().info(f"Setpoint reached: {self.current_setpoint}")
                     self.waypoint_index = 0
-                    # self.index += 1
                     self.previous_setpoint = self.current_setpoint
                     if self.previous_state == State.INIT:
                         self.state = State.GRASP
@@ -209,27 +188,20 @@ class PosSetpointNode(Node):
                         self.state = State.DROP
                     elif self.previous_state == State.MOVE_TO_START:
                         self.state = State.INIT
-                    # if self.index >= len(self.setpoints):
-                    #     self.get_logger().info("All setpoints reached")
-                    #     self.state = State.MOVE_TO_START
             else:
                 # set new setpoint if close to current setpoint
                 if mean_squared_error < self.epsilon_en_route:
                     self.waypoint_index += 1
-                    self.get_logger().info(f"Waypoint reached: {self.current_waypoint}")
 
         if self.state == State.GRASP:
-            # Dummy state
-            # publish grasp command
             grasp_msg = Bool()
             grasp_msg.data = True
             self.grip_command_pub.publish(grasp_msg)
-            # time.sleep(3)
             if self.holding_object == True:
                 self.state = State.LIFT
 
         if self.state == State.LIFT:
-            self.current_setpoint += np.array([0,0,0.05])
+            self.current_setpoint += np.array([0,0,0.075])
             self.publish_setpoint(setpoint=self.current_setpoint)
             self.get_logger().info(f'{self.state}')
             time.sleep(10)
@@ -252,8 +224,6 @@ class PosSetpointNode(Node):
             self.state = State.DROP
 
         if self.state == State.DROP:
-            # Dummy state
-            # publish drop command
             grasp_msg = Bool()
             grasp_msg.data = False
             self.grip_command_pub.publish(grasp_msg)
@@ -262,57 +232,18 @@ class PosSetpointNode(Node):
 
             self.state = State.MOVE_TO_START
 
-        # if self.state == State.DRIVE_LOOPS:
-        #     self.current_setpoint = self.setpoints[self.index]
-        #
-        #     self.create_straight_path()
-        #     # self.create_circular_path()
-        #
-        #     self.current_waypoint = self.waypoints[self.waypoint_index]
-        #     self.publish_setpoint(setpoint=self.current_waypoint)
-        #     self.previous_state = State.INIT
-        #     self.state = State.EN_ROUTE
-
     def create_straight_path(self):
         """Creates equidistant points on a line between the current point 
         and the goal"""
-        # self.waypoints = np.linspace(self.previous_setpoint,
-        #                              self.current_setpoint,
-        #                              num=self.num_of_waypoints, endpoint=True)
         self.waypoints = []
         distance_to_current_waypoint = np.zeros(3)
         distance = np.array(self.current_setpoint) - self.previous_setpoint
-        # self.get_logger().info(f"previous_setpoint: {self.previous_setpoint}")
-        # self.get_logger().info(f"current_setpoint: {self.current_setpoint}")
-        # self.get_logger().info(f"distance: {distance}")
         while (np.max(np.abs(distance)) > self.epsilon_en_route):
             waypoint = self.previous_setpoint + distance_to_current_waypoint + distance/2
             distance_to_current_waypoint += distance/2
             distance = self.current_setpoint - waypoint 
             self.waypoints.append(waypoint)
         self.waypoints.append(self.current_setpoint)
-        self.get_logger().info(f"Waypoints: {self.waypoints}")
-
-
-
-
-    def create_circular_path(self):
-        """Creates equidistant points on a half circle between the current point 
-        and the goal"""
-        distance = np.array(self.current_setpoint) - self.previous_setpoint
-        radius = np.linalg.norm(distance[:-1],ord=2)/2 
-        center_point = self.previous_setpoint + distance/2
-
-        angle = np.arctan2(distance[1], distance[0])
-        # TODO look into why it needs to be the wrong way around
-        phis = np.linspace(np.pi, 0, num=self.num_of_waypoints + 1, endpoint=True) 
-        thetas = np.linspace(np.pi/2, 0, num=self.num_of_waypoints + 1, endpoint=True) 
-        waypoints = []
-
-        for theta in thetas:
-            waypoint = center_point + (np.array([radius * np.cos(angle-theta), radius * np.sin(angle-theta ), 0]))
-            waypoints.append(waypoint)
-        self.waypoints = waypoints
  
     def set_current_position(self, pose_msg: PoseStamped):
         current_robot_pos = pose_msg.pose.position
@@ -346,8 +277,6 @@ class PosSetpointNode(Node):
         object_position_in_map = np.array([object_position_in_map.x,
                                            object_position_in_map.y,
                                            object_position_in_map.z])
-        # TODO why is an offset of 18 cm necessary?
-        # self.object_point = object_position_in_map - self.distance_gripper_robot - self.object_apriltag_offset + np.array([0, 0.18, 0])
         self.object_point = object_position_in_map - self.distance_gripper_robot - self.object_apriltag_offset 
 
     def object_grabbed(self, msg):
