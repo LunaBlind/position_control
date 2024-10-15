@@ -66,9 +66,11 @@ class PosSetpointNode(Node):
         self.distance_gripper_robot = np.array([-0.0375, 0.45, 0.05])
         # self.distance_gripper_robot = np.array([0.0, 0.24, 0.0])
 
-        self.starting_point = np.array([0.5, 1.0, -0.5]) 
-        # self.object_point = np.array([0.6, 3.60, -0.825]) - self.distance_gripper_robot
+        self.starting_point = np.array([0.79, 3.0, -0.85]) 
+        self.object_point = np.array([0,0,0])
+        self.object_apriltag_offset = np.array([0.025, 0, 0.04])
         # self.goal_point = np.array([1.4, 3.60, -0.825]) - self.distance_gripper_robot
+        self.holding_object = False
 
 
         self.waypoints = []
@@ -126,7 +128,6 @@ class PosSetpointNode(Node):
                 ('epsilon.en_route', rclpy.parameter.Parameter.Type.DOUBLE),
                 ('epsilon.goal', rclpy.parameter.Parameter.Type.DOUBLE),
                 ('point.goal', rclpy.parameter.Parameter.Type.DOUBLE_ARRAY),
-                ('point.object', rclpy.parameter.Parameter.Type.DOUBLE_ARRAY),
             ],
         )
         param = self.get_parameter('epsilon.en_route')
@@ -141,10 +142,6 @@ class PosSetpointNode(Node):
         self.get_logger().info(f'{param.name}={param.value}')
         self.goal_point = param.value - self.distance_gripper_robot
 
-        param = self.get_parameter('point.object')
-        self.get_logger().info(f'{param.name}={param.value}')
-        self.object_point = param.value - self.distance_gripper_robot
-
         self.add_on_set_parameters_callback(self.on_params_changed)
 
     def on_params_changed(self, params ):
@@ -157,8 +154,6 @@ class PosSetpointNode(Node):
                 self.epsilon_goal = param.value
             if param.name == 'point.goal':
                 self.goal_point = param.value - self.distance_gripper_robot
-            if param.name == 'point.object':
-                self.object_point = param.value - self.distance_gripper_robot
             else:
                 continue
         return SetParametersResult(successful=True, reason='Parameter set')
