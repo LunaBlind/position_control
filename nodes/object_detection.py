@@ -90,12 +90,11 @@ class AprilTagPoseSubscriber(Node):
     def listener_callback(self, msg):
         if msg.detections:
             for detection in msg.detections:
+                tag_size = 0.02
                 if detection.id == 101:
-                    tag_size = 0.03
-                else:
-                    tag_size = 0.04
+                    tag_size = 0.035
 
-                self.object_points = np.array([
+                object_points = np.array([
                     [-tag_size / 2, tag_size / 2, 0],
                     [ tag_size / 2, tag_size / 2, 0],
                     [ tag_size / 2,  -tag_size / 2, 0],
