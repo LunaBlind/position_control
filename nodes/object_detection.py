@@ -88,6 +88,10 @@ class AprilTagPoseSubscriber(Node):
         self.dist_coeffs = np.array(camera_info.d)
     
     def listener_callback(self, msg):
+        if self.gripper_state == 'unknown':
+            if (msg.header.stamp.sec - self.unknown_state_start_time) >= self.unknown_threshold:
+                self.gripper_state = 'holding'
+                self.publish_gripper_state()
         if msg.detections:
             for detection in msg.detections:
                 tag_size = 0.02
@@ -109,14 +113,11 @@ class AprilTagPoseSubscriber(Node):
                     [detection.corners[3].x, detection.corners[3].y]
                 ], dtype=np.float32)
                 # Use solvePnP to estimate the pose
+                # cv2.SOLVEPNP_IPPE_SQUARE is specificially for tags 
                 success, rvec, tvec = cv2.solvePnP(
-                        self.object_points, image_points,
-                        self.camera_matrix, self.dist_coeffs)
-                # self.get_logger().info(f"Rotation Vector: {rvec}")
-                rvec, _ = cv2.Rodrigues(rvec)
-                T_current = np.eye(4)
-                T_current[:3, :3] = rvec
-                T_current[:3, 3] = tvec.squeeze()
+                        object_points, image_points,
+                        self.camera_matrix, self.dist_coeffs,
+                        flags=cv2.SOLVEPNP_IPPE_SQUARE)
 
                 if success == True:
                     if detection.id == 100:
@@ -139,12 +140,7 @@ class AprilTagPoseSubscriber(Node):
                         else:
                             new_state = 'unknown'
                         self.update_state(new_state, msg.header.stamp.sec)
-                        grab_msg = Bool()
-                        if self.gripper_state == 'holding':
-                            grab_msg.data = True
-                        else:
-                            grab_msg.data = False
-                        self.object_grabbed_pub.publish(grab_msg)
+                        self.publish_gripper_state()
                     # self.get_logger().info(f"Translation Vector: {tvec}")
                     # self.get_logger().info(f"New state: {new_state}")
                     # self.get_logger().info(f"Gripper state: {self.gripper_state}")
@@ -165,6 +161,30 @@ class AprilTagPoseSubscriber(Node):
             if self.gripper_state == 'holding':
                 if new_state == 'open' or new_state == 'closed':
                     self.gripper_state = new_state
+    def publish_gripper_state(self):
+        grab_msg = Bool()
+        if self.gripper_state == 'holding':
+            grab_msg.data = True
+        else:
+            grab_msg.data = False
+        self.object_grabbed_pub.publish(grab_msg)
+
+
+    def create_pose_msg(self, tvec, quaternion):
+        # Create a Pose message
+        pose = Pose()
+
+        # Set position from the translation vector (tvec)
+        pose.position.x = tvec[0]
+        pose.position.y = tvec[1]
+        pose.position.z = tvec[2]
+
+        # Set orientation from the quaternion
+        pose.orientation.x = quaternion[0]
+        pose.orientation.y = quaternion[1]
+        pose.orientation.z = quaternion[2]
+        pose.orientation.w = quaternion[3]
+        return pose
 
     def transform_matrix_to_pose(self, transformation_matrix):
         # Extract the translation (x, y, z) from the transformation matrix
