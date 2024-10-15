@@ -110,6 +110,11 @@ class PosSetpointNode(Node):
                                                   topic='grasp_command',
                                                   qos_profile=1)
 
+        self.object_grabbed_sub = self.create_subscription(msg_type=Bool,
+                                                  topic='object_grabbed',
+                                                  callback=self.object_grabbed,
+                                                  qos_profile=1)
+
         self.timer = self.create_timer(timer_period_sec=1/10 ,
                                        callback=self.timer_callback)
 
@@ -224,9 +229,9 @@ class PosSetpointNode(Node):
             grasp_msg = Bool()
             grasp_msg.data = True
             self.grip_command_pub.publish(grasp_msg)
-            time.sleep(3)
-
-            self.state = State.LIFT
+            # time.sleep(3)
+            if self.holding_object == True:
+                self.state = State.LIFT
 
         if self.state == State.LIFT:
             self.current_setpoint += np.array([0,0,0.05])
@@ -341,6 +346,17 @@ class PosSetpointNode(Node):
         euclidian_err_msg.header.stamp = msg.header.stamp
         self.euclidian_pos_error_pub.publish(euclidian_err_msg)
 
+    def set_object_position(self, pose_msg: PoseStamped):
+        object_position_in_map = pose_msg.pose.position
+        object_position_in_map = np.array([object_position_in_map.x,
+                                           object_position_in_map.y,
+                                           object_position_in_map.z])
+        # TODO why is an offset of 18 cm necessary?
+        # self.object_point = object_position_in_map - self.distance_gripper_robot - self.object_apriltag_offset + np.array([0, 0.18, 0])
+        self.object_point = object_position_in_map - self.distance_gripper_robot - self.object_apriltag_offset 
+
+    def object_grabbed(self, msg):
+        self.holding_object = msg.data
 
 def main():
     rclpy.init()
