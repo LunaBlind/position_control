@@ -96,10 +96,10 @@ class AprilTagPoseSubscriber(Node):
                     tag_size = 0.04
 
                 self.object_points = np.array([
-                    [-tag_size / 2, -tag_size / 2, 0],
-                    [ tag_size / 2, -tag_size / 2, 0],
-                    [ tag_size / 2,  tag_size / 2, 0],
-                    [-tag_size / 2,  tag_size / 2, 0]
+                    [-tag_size / 2, tag_size / 2, 0],
+                    [ tag_size / 2, tag_size / 2, 0],
+                    [ tag_size / 2,  -tag_size / 2, 0],
+                    [-tag_size / 2,  -tag_size / 2, 0]
                 ], dtype=np.float32)
 
                 # Assuming corners are provided in the apriltag_msgs/Point format (x, y)
