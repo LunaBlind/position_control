@@ -24,7 +24,8 @@ class AprilTagPoseSubscriber(Node):
                                                     qos_profile=10
         )
         self.camera_info_sub = self.create_subscription( msg_type=CameraInfo,
-                                                    topic='front_camera/camera_info',
+                                                    # topic='front_camera/camera_info',
+                                                    topic='synchronized_camera_info',
                                                     callback=self.set_camera_matrices,
                                                     qos_profile=10)
 
@@ -36,21 +37,15 @@ class AprilTagPoseSubscriber(Node):
                                                   topic='object_pose',
                                                   qos_profile=1)
 
+        self.object_pose_camera_frame_pub = self.create_publisher(msg_type=PoseStamped,
+                                                  topic='object_pose_camera_frame',
+                                                  qos_profile=1)
         # Initialize the tf2 buffer and listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        # self.camera_matrix = np.array([
-        #      [467.74270306499267, 0.0, 320.0],
-        #      [0.0, 467.74270306499267, 240.0],
-        #      [0.0, 0.0, 1.0],
-        #     ])
         # Neutral/default camera matrix (identity matrix for no distortion)
         self.camera_matrix = np.eye(3, dtype=np.float32)
-        # self.T_closed = np.array([
-        #                         [0.00854252, -0.99995771, -0.00340785, -0.091],
-        #                          [-0.17625282,  0.00184893, -0.98434319, 0.1],
-        #                          [0.98430786,  0.00900941, -0.17622957, 0.375],
-        #                          [0, 0, 0, 1]])
+
         self.gripper_threshold = 0.25
         self.gripper_state = 'closed'
         self.unknown_state_start_time = None
@@ -136,6 +131,11 @@ class AprilTagPoseSubscriber(Node):
                     if detection.id == 101:
                         difference_open = np.linalg.norm(T_current - self.T_open, 'fro')
                         difference_closed = np.linalg.norm(T_current - self.T_closed, 'fro')
+                        # self.get_logger().info(f"Current Transform: {T_current}")
+                        # self.get_logger().info(f"Open Transform: {self.T_open}")
+                        # self.get_logger().info(f"Closed Transform: {self.T_closed}")
+                        # self.get_logger().info(f"difference open: {difference_open}")
+                        # self.get_logger().info(f"difference closed: {difference_closed}")
 
                         if difference_open < self.gripper_threshold:
                             new_state = 'open'
@@ -143,6 +143,8 @@ class AprilTagPoseSubscriber(Node):
                             new_state = 'closed'
                         else:
                             new_state = 'unknown'
+                        self.get_logger().info(f"gripper stae: {new_state}")
+                        # self.get_logger().info(f"Time: {msg.header.stamp.sec}")
                         self.update_state(new_state, msg.header.stamp.sec)
                         self.publish_gripper_state()
                     # self.get_logger().info(f"Translation Vector: {tvec}")
@@ -156,6 +158,7 @@ class AprilTagPoseSubscriber(Node):
                 self.unknown_state_start_time = current_timestamp
                 self.gripper_state = 'unknown'
             elif (current_timestamp - self.unknown_state_start_time) >= self.unknown_threshold:
+                self.get_logger().info(f"time diff: {current_timestamp - self.unknown_state_start_time}")
                 self.gripper_state = 'holding'
         elif new_state == 'open':
             self.gripper_state = 'open'
@@ -211,6 +214,26 @@ class AprilTagPoseSubscriber(Node):
 
         # Get the current time
         now = rclpy.time.Time()
+        # self.get_logger().info(f"Tag Pose in front_camera Frame: {pose.position}")
+        pose_msg = PoseStamped()
+        pose_msg.pose = pose
+
+            # Set the header
+        pose_msg.header.stamp = now.to_msg()  # Current time
+        pose_msg.header.frame_id = "bluerov00/front_camera"  # Reference frame
+        # pose_msg.header.stamp = now
+        self.object_pose_camera_frame_pub.publish(pose_msg)
+
+        # Transform the pose from the tag frame to the world frame
+        transform = self.tf_buffer.lookup_transform('bluerov00/base_link',  # Target frame
+                                                    # msg.header.frame_id,  # Source frame
+                                                    'bluerov00/front_camera',  # Source frame
+                                                    # 'front_camera_link',  # Source frame
+                                                    now)  # Time
+
+        # Apply the transform to get the pose in the world frame
+        pose_base_link = tf2_geometry_msgs.do_transform_pose(pose, transform)
+        # self.get_logger().info(f"Tag Pose in base_link Frame: {pose_base_link.position}")
 
         # Transform the pose from the tag frame to the world frame
         transform = self.tf_buffer.lookup_transform('map',  # Target frame
@@ -223,13 +246,15 @@ class AprilTagPoseSubscriber(Node):
         pose_world = tf2_geometry_msgs.do_transform_pose(pose, transform)
 
         # Now you have the pose in the world frame
-        self.get_logger().info(f"Tag Pose in World Frame: {pose_world.position}")
+        # self.get_logger().info(f"Tag Pose in Map Frame: {pose_world.position}")
         pose_msg = PoseStamped()
+        # pose_msg.pose = pose_base_link
         pose_msg.pose = pose_world
 
             # Set the header
         pose_msg.header.stamp = now.to_msg()  # Current time
         pose_msg.header.frame_id = "map"  # Reference frame
+        # pose_msg.header.frame_id = "bluerov00/base_link"  # Reference frame
         # pose_msg.header.stamp = now
         self.object_pose_pub.publish(pose_msg)
 
